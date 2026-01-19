@@ -52,7 +52,7 @@ export const youtubeService = {
                     const uploadsId = await this.getChannelUploadsId(item.sourceId);
                     
                     // Update DB silently to cache this for next time
-                    await dbService.update('categories', { ...item, uploadsPlaylistId: uploadsId });
+                    await dbService.update('channels', { ...item, uploadsPlaylistId: uploadsId });
                     
                     playlistId = uploadsId;
                 } catch (e) {
