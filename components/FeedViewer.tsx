@@ -1,31 +1,30 @@
+
 import React, { useEffect, useState } from 'react';
-import { ExternalLink, Play, Clock, User, X } from 'lucide-react';
+import { ExternalLink, Play, Clock, User, X, Bookmark, Check } from 'lucide-react';
 import { MediaItem, VideoItem } from '../types';
-import { youtubeService } from '../services/youtube';
+import { mediaResolver } from '../services/mediaResolver';
 
 interface FeedViewerProps {
   item: MediaItem;
+  onBookmark?: (video: VideoItem) => void;
 }
 
-export const FeedViewer: React.FC<FeedViewerProps> = ({ item }) => {
+export const FeedViewer: React.FC<FeedViewerProps> = ({ item, onBookmark }) => {
   const [items, setItems] = useState<VideoItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeVideo, setActiveVideo] = useState<VideoItem | null>(null);
+  const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setActiveVideo(null);
     setItems([]);
     
-    // Even for single videos (Favorites), we might want to fetch details via API to get thumbnail/title
-    // if we only stored the ID. But usually we have that info. 
-    // However, youtubeService handles 'video' type too.
-
     const loadContent = async () => {
       setLoading(true);
       setError(null);
       try {
-        const videoItems = await youtubeService.getVideos(item);
+        const videoItems = await mediaResolver.getVideos(item);
         setItems(videoItems);
       } catch (e: any) {
         console.error(e);
@@ -38,29 +37,37 @@ export const FeedViewer: React.FC<FeedViewerProps> = ({ item }) => {
     loadContent();
   }, [item]);
 
-  // 1. Single Video View (Favorites)
-  // If the item is a favorite, we still show the player, but maybe we want to fetch details first?
-  // The FeedViewer logic essentially handles "lists". 
-  // If type is 'video', youtubeService.getVideos returns an array of 1.
-  // We can render that 1 item as the "Featured" item or just show the list of 1.
-  // But strictly per previous UI:
+  const handleBookmark = (e: React.MouseEvent, vid: VideoItem) => {
+      e.stopPropagation();
+      if (onBookmark) {
+          onBookmark(vid);
+          setBookmarkedIds(prev => new Set(prev).add(vid.id));
+      }
+  };
+
+  // 1. Single Video View (Reference/Favorite)
   if (item.type === 'video') {
-      // If we have API data, use it, otherwise fall back to stored item data
       const displayItem = items[0] || {
           id: item.sourceId,
           title: item.name,
           description: '',
-          tags: item.tags
+          tags: item.tags,
+          platform: item.platform || 'youtube',
+          link: item.url
       };
 
     return (
       <div className="w-full max-w-4xl mx-auto mt-8 p-4">
-        <h2 className="text-2xl font-bold mb-4 text-white">{displayItem.title}</h2>
+        <div className="flex items-center gap-2 mb-4">
+             <h2 className="text-2xl font-bold text-white">{displayItem.title}</h2>
+             <span className="text-xs uppercase bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded border border-zinc-700">{displayItem.platform}</span>
+        </div>
+        
         <div className="aspect-video w-full bg-black rounded-xl overflow-hidden shadow-2xl border border-zinc-700 relative">
           <iframe
             width="100%"
             height="100%"
-            src={`https://www.youtube.com/embed/${item.sourceId}?autoplay=0`}
+            src={mediaResolver.getEmbedUrl({ platform: displayItem.platform, sourceId: displayItem.id })}
             title={item.name}
             frameBorder="0"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -78,13 +85,13 @@ export const FeedViewer: React.FC<FeedViewerProps> = ({ item }) => {
             </div>
             
             <a 
-                href={`https://www.youtube.com/watch?v=${item.sourceId}`}
+                href={displayItem.link || item.url}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-2 text-sm text-zinc-400 hover:text-white transition-colors"
             >
                 <ExternalLink size={14} />
-                Open on YouTube
+                Open on {displayItem.platform}
             </a>
         </div>
         {items[0]?.description && (
@@ -103,8 +110,9 @@ export const FeedViewer: React.FC<FeedViewerProps> = ({ item }) => {
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-3xl font-bold text-white tracking-tight">{item.name}</h1>
         <div className="flex gap-2">
-            {item.type === 'channel' && <span className="px-2 py-1 bg-green-900/50 text-green-400 text-xs rounded border border-green-900">Channel</span>}
-            {item.type === 'playlist' && <span className="px-2 py-1 bg-purple-900/50 text-purple-400 text-xs rounded border border-purple-900">Playlist</span>}
+            <span className="capitalize px-2 py-1 bg-zinc-800 text-zinc-400 text-xs rounded border border-zinc-700">{item.platform || 'youtube'}</span>
+            {item.type === 'channel' && <span className="px-2 py-1 bg-green-900/50 text-green-400 text-xs rounded border border-green-900">Source</span>}
+            {item.type === 'playlist' && <span className="px-2 py-1 bg-purple-900/50 text-purple-400 text-xs rounded border border-purple-900">Path</span>}
         </div>
       </div>
 
@@ -129,18 +137,24 @@ export const FeedViewer: React.FC<FeedViewerProps> = ({ item }) => {
       {!loading && !error && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
           {items.map((vid) => (
-            <div key={vid.id} className="group bg-surface rounded-xl overflow-hidden border border-zinc-700 hover:border-zinc-500 transition-all hover:shadow-xl hover:shadow-blue-900/10 flex flex-col">
+            <div key={vid.id} className="group bg-surface rounded-xl overflow-hidden border border-zinc-700 hover:border-zinc-500 transition-all hover:shadow-xl hover:shadow-blue-900/10 flex flex-col relative">
               
               <div 
                 className="aspect-video bg-black relative overflow-hidden cursor-pointer"
                 onClick={() => setActiveVideo(vid)}
               >
-                <img 
-                  src={vid.thumbnail} 
-                  alt={vid.title} 
-                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                  loading="lazy"
-                />
+                {vid.thumbnail ? (
+                    <img 
+                    src={vid.thumbnail} 
+                    alt={vid.title} 
+                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    loading="lazy"
+                    />
+                ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-zinc-800 text-zinc-600">
+                        <Play size={32} />
+                    </div>
+                )}
                 <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <button 
                         className="p-3 bg-white/10 backdrop-blur-md rounded-full text-white hover:bg-white/20 transition-colors transform scale-90 group-hover:scale-100 duration-300"
@@ -168,15 +182,27 @@ export const FeedViewer: React.FC<FeedViewerProps> = ({ item }) => {
                             <Clock size={12} />
                             <span>{new Date(vid.pubDate).toLocaleDateString()}</span>
                         </div>
-                        <a 
-                            href={vid.link} 
-                            target="_blank" 
-                            rel="noreferrer" 
-                            className="text-zinc-500 hover:text-white transition-colors flex items-center gap-1"
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            <ExternalLink size={12} />
-                        </a>
+                        <div className="flex items-center gap-3">
+                            {onBookmark && (
+                                <button 
+                                    onClick={(e) => handleBookmark(e, vid)}
+                                    className={`transition-colors ${bookmarkedIds.has(vid.id) ? 'text-green-400' : 'text-zinc-500 hover:text-white'}`}
+                                    title="Watch Later"
+                                >
+                                    {bookmarkedIds.has(vid.id) ? <Check size={16} /> : <Bookmark size={16} />}
+                                </button>
+                            )}
+                            <a 
+                                href={vid.link} 
+                                target="_blank" 
+                                rel="noreferrer" 
+                                className="text-zinc-500 hover:text-white transition-colors flex items-center gap-1"
+                                onClick={(e) => e.stopPropagation()}
+                                title="Open in new tab"
+                            >
+                                <ExternalLink size={16} />
+                            </a>
+                        </div>
                     </div>
                 </div>
               </div>
@@ -208,7 +234,7 @@ export const FeedViewer: React.FC<FeedViewerProps> = ({ item }) => {
                     <iframe
                         width="100%"
                         height="100%"
-                        src={`https://www.youtube.com/embed/${activeVideo.id}?autoplay=1`}
+                        src={mediaResolver.getEmbedUrl({ platform: activeVideo.platform, sourceId: activeVideo.id })}
                         title={activeVideo.title}
                         frameBorder="0"
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -217,9 +243,19 @@ export const FeedViewer: React.FC<FeedViewerProps> = ({ item }) => {
                 </div>
                 <div className="p-4 bg-zinc-900 text-sm flex justify-between items-center text-zinc-400">
                     <span>{new Date(activeVideo.pubDate).toLocaleString()}</span>
-                    <a href={activeVideo.link} target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:text-white">
-                        Watch on YouTube <ExternalLink size={14} />
-                    </a>
+                    <div className="flex gap-4">
+                        {onBookmark && (
+                             <button 
+                                onClick={(e) => handleBookmark(e, activeVideo)}
+                                className={`flex items-center gap-2 hover:text-white ${bookmarkedIds.has(activeVideo.id) ? 'text-green-400' : ''}`}
+                            >
+                                {bookmarkedIds.has(activeVideo.id) ? <Check size={14} /> : <Bookmark size={14} />} Watch Later
+                            </button>
+                        )}
+                        <a href={activeVideo.link} target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:text-white">
+                            Watch on {activeVideo.platform} <ExternalLink size={14} />
+                        </a>
+                    </div>
                 </div>
             </div>
         </div>

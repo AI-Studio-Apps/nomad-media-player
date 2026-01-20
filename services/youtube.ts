@@ -1,3 +1,4 @@
+
 import { dbService } from './db';
 import { MediaItem, VideoItem } from '../types';
 
@@ -93,7 +94,8 @@ export const youtubeService = {
             pubDate: snippet.publishedAt,
             author: snippet.channelTitle,
             description: snippet.description,
-            link: `https://www.youtube.com/watch?v=${snippet.resourceId.videoId}`
+            link: `https://www.youtube.com/watch?v=${snippet.resourceId.videoId}`,
+            platform: 'youtube'
         };
     },
 
@@ -106,7 +108,8 @@ export const youtubeService = {
             pubDate: snippet.publishedAt,
             author: snippet.channelTitle,
             description: snippet.description,
-            link: `https://www.youtube.com/watch?v=${apiItem.id}`
+            link: `https://www.youtube.com/watch?v=${apiItem.id}`,
+            platform: 'youtube'
         };
     }
 }

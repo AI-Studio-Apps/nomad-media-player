@@ -22,9 +22,17 @@ export interface DashboardCache {
 
 export interface AppSettings {
   id?: string; // 'config'
-  apiKey?: EncryptedData; // Now stores encrypted object, not string
+  apiKey?: EncryptedData; // YouTube API Key
+  
+  // Proxy Configuration
+  customProxyUrl?: string; // Priority 1 (Custom/Homelab)
+  proxy1Url?: string;      // Priority 2 (Default: AllOrigins)
+  proxy2Url?: string;      // Priority 3 (Fallback: CORSProxy)
+
   dashboardCache?: DashboardCache;
 }
+
+export type Platform = 'youtube' | 'vimeo' | 'dailymotion';
 
 export interface MediaItem {
   id?: number;
@@ -32,6 +40,7 @@ export interface MediaItem {
   sourceId: string; // The ID (Channel ID, Playlist ID, Video ID)
   url: string; // Web URL (e.g. youtube.com/watch?v=...)
   type: 'channel' | 'playlist' | 'video';
+  platform?: Platform; // Defaults to 'youtube' if undefined for backward compatibility
   tags?: string[];
   uploadsPlaylistId?: string; // Cache for Channel's "Uploads" playlist
   createdAt: number;
@@ -45,30 +54,31 @@ export interface VideoItem {
   thumbnail: string;
   author: string;
   description: string;
+  platform: Platform;
   views?: string; // Optional if we fetch stats later
 }
 
 export type ViewState = 
   | { type: 'dashboard' } 
-  | { type: 'channel', item: MediaItem } 
-  | { type: 'playlist', item: MediaItem } 
-  | { type: 'video', item: MediaItem }
+  | { type: 'channel', item: MediaItem, section?: string } 
+  | { type: 'playlist', item: MediaItem, section?: string } 
+  | { type: 'video', item: MediaItem, section?: string }
   | { type: 'about' }
   | { type: 'settings' }
   | { type: 'search', query: string }
   | { type: 'tag', tag: string };
 
 export const DEFAULT_CHANNELS: Partial<MediaItem>[] = [
-  { name: 'ARTE.tv', sourceId: 'UCVogAsASqbceBmQMi1WA39g', type: 'channel', tags: ['Documentary', 'Education'] },
-  { name: 'Deutsche Welle', sourceId: 'UCW39zufHfsuGgpLviKh297Q', type: 'channel', tags: ['Documentary', 'News', 'Travel'] },
-  { name: 'Get.factual', sourceId: 'UCvD34fvRZ3QHWSkU1aUM99w', type: 'channel', tags: ['History', 'Science', 'Technology'] },
-  { name: 'National Geographic', sourceId: 'UCpVm7bg6pXKo1Pr6k5kxG9A', type: 'channel', tags: ['Science', 'Exploration', 'Adventure'] },
-  { name: 'NOVA', sourceId: 'UCjHz5SVHeMT0AViCYZvsGDA', type: 'channel', tags: ['Science'] },
+  { name: 'ARTE.tv', sourceId: 'UCVogAsASqbceBmQMi1WA39g', type: 'channel', platform: 'youtube', tags: ['Documentary', 'Education'] },
+  { name: 'Deutsche Welle', sourceId: 'UCW39zufHfsuGgpLviKh297Q', type: 'channel', platform: 'youtube', tags: ['Documentary', 'News', 'Travel'] },
+  { name: 'Get.factual', sourceId: 'UCvD34fvRZ3QHWSkU1aUM99w', type: 'channel', platform: 'youtube', tags: ['History', 'Science', 'Technology'] },
+  { name: 'National Geographic', sourceId: 'UCpVm7bg6pXKo1Pr6k5kxG9A', type: 'channel', platform: 'youtube', tags: ['Science', 'Exploration', 'Adventure'] },
+  { name: 'NOVA', sourceId: 'UCjHz5SVHeMT0AViCYZvsGDA', type: 'channel', platform: 'youtube', tags: ['Science'] },
 ];
 
 export const DEFAULT_PLAYLISTS: Partial<MediaItem>[] = [
-  { name: 'Arte Space', sourceId: 'PL-eZcc0GI8-XnEWudxZl2db9wxUtwUV_6', type: 'playlist', tags: ['Documentary', 'Education', 'Space'] },
-  { name: 'Ancient Civilizations', sourceId: 'PLivjPDlt6ApQ-KbhlMBoVf-1zI3mglTvQ', type: 'playlist', tags: ['Documentary', 'Education', 'History'] },
+  { name: 'Arte Space', sourceId: 'PL-eZcc0GI8-XnEWudxZl2db9wxUtwUV_6', type: 'playlist', platform: 'youtube', tags: ['Documentary', 'Education', 'Space'] },
+  { name: 'Ancient Civilizations', sourceId: 'PLivjPDlt6ApQ-KbhlMBoVf-1zI3mglTvQ', type: 'playlist', platform: 'youtube', tags: ['Documentary', 'Education', 'History'] },
 ];
 
 export const DEFAULT_TAGS = [

@@ -1,37 +1,52 @@
 <div align="center">
-<img width="auto" height="auto" alt="nomad media player" src="nomad-media-player-screenshot.jpg" />
+  <a href="https://github.com/AI-Studio-Apps/vibe-code">
+    <img src="https://img.shields.io/badge/Explore-vibe--code-8A2BE2?style=for-the-badge&logo=github&logoColor=white" alt="vibe-code repo">
+  </a>
+  <a href="https://opensource.org/licenses/MIT">
+    <img src="https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge" alt="MIT License">
+  </a>
+  <br/>
+  <br/>
+  <h1>🎥 Nomad Media Player</h1>
+  <br/>
+  <img width="auto" height="auto" alt="nomad media player" src="nomad-media-player-screenshot.jpg" />
+  <br/>
+  <br/>
 </div>
 
 
-# 🌍 Nomad Media Player
-
 Nomad Media Player stores your favorite public channels, playlists, and videos locally.
-A self-hosted app for digital nomads—built with local-first design and privacy-respecting architecture.
+A self-hosted app for digital nomads, built with local-first design and privacy-respecting architecture.   
 
-Nomad Media Player is a purpose-built workspace for intentional viewing and research.
-
-In an era of abundant information, this tool allows students and professionals to curate their own educational feeds, separating valuable learning resources from the algorithmic loops of entertainment platforms.
+In an era of abundant information, Nomad Media Player is a purpose-built workspace for intentional viewing and research. It allows students and professionals to curate their own educational feeds, separating valuable learning resources from the algorithmic loops of entertainment platforms.
 
 It fosters a proactive approach to media consumption, ensuring your time is spent on content you selected, not content suggested to you.
-
-> Built with open web tech. Runs entirely in your browser.
 
 
 https://ai-studio-apps.github.io/nomad-media-player/
 
 
-## 🎥 Connect YouTube
+## API and RSS
 
-The transition from RSS to the YouTube Data API v3 upgrade improves stability, data quality,   
-and allow fetching more videos.  
+Many video platforms have restricted or removed public RSS feeds to enforce tracking, control embedding, and monetize access. As a result, their content can no longer be fetched directly by browser-based apps due to CORS restrictions.
 
-YouTube Data API v3 allows up to 50 items per request, full metadata, max-resolution thumbnails,   
-and requires no "hacky" CORS proxies.
+To preserve user privacy and enable client-side functionality, we use a lightweight, open proxy that:
+
+- Only forwards requests to public content
+- Adds the required CORS headers
+- Runs without logging, tracking, or data retention
+
+This ensures reliable access to public media while staying true to our local-first, privacy-respecting principles. However, public RSS feeds are increasingly unreliable or unavailable. Transitioning to official video platform APIs (like YouTube’s Data API) provides better stability, richer metadata, and access to more videos.
+
+These APIs typically require a free developer account to generate an API key, but no payment or sensitive permissions are needed. Your key stays in your browser and encrypted by the app.
 
 
 ### YouTube API key
 
 To fetch your public YouTube videos or channel info, you’ll need a free **YouTube Data API key** from Google.
+
+YouTube Data API v3 allows up to 50 items per request, full metadata, max-resolution thumbnails,   
+and requires no "hacky" CORS proxies.
 
 ### How to get it:  
 
@@ -85,7 +100,7 @@ The following review outlines current and planned integrations—focusing on ser
 
 All integrations should be implemented **without backend dependencies**, using only browser-based requests to official public APIs.
 
-### Video platforms
+### 🌍 Video platforms
 
 Most major video platforms offer public REST APIs, but access, cost, and ease of use vary significantly. Below is a clear, practical comparison focused on free-tier availability, authentication needs, and suitability for a client-side app like nomad-media-player (hosted on GitHub Pages).
 

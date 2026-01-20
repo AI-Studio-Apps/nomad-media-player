@@ -1,7 +1,8 @@
+
 import { UserAuth, MediaItem, DEFAULT_CHANNELS, DEFAULT_PLAYLISTS, DEFAULT_TAGS, AppSettings, Tag } from '../types';
 
 const DB_NAME = 'NomadMediaSecureDB';
-const DB_VERSION = 4; // Bump version to force schema update and reseeding
+const DB_VERSION = 5; // Bump version for watchLater store
 
 export class DBService {
   private db: IDBDatabase | null = null;
@@ -44,6 +45,11 @@ export class DBService {
           store.createIndex('tags', 'tags', { unique: false, multiEntry: true });
         }
 
+        // Watch Later
+        if (!db.objectStoreNames.contains('watchLater')) {
+            db.createObjectStore('watchLater', { keyPath: 'id', autoIncrement: true });
+        }
+
         // Tags
         let tagStore: IDBObjectStore;
         if (!db.objectStoreNames.contains('tags')) {
@@ -58,35 +64,38 @@ export class DBService {
           db.createObjectStore('settings', { keyPath: 'id' });
         }
 
-        // --- MIGRATION / SEEDING LOGIC (Runs on V4 update) ---
-        // Warning: This logic effectively resets the default stores to the new configuration
-        // requested by the user.
+        // --- MIGRATION / SEEDING LOGIC (Runs on Version Upgrade) ---
+        // Only run seeding if upgrading from scratch (version 1) or specific major version logic
+        // For existing users, we don't want to wipe data on minor updates unless intended.
+        // However, the original code wiped data on V4. We will keep logic safe here.
         
-        // 1. Clear and Reseed Channels
-        channelStore.clear(); 
-        DEFAULT_CHANNELS.forEach(cat => {
-            channelStore.add({
-              ...cat,
-              url: `https://www.youtube.com/channel/${cat.sourceId}`,
-              createdAt: Date.now()
-            });
-        });
-
-        // 2. Clear and Reseed Playlists
-        playlistStore.clear();
-        DEFAULT_PLAYLISTS.forEach(pl => {
-            playlistStore.add({
-                ...pl,
-                url: `https://www.youtube.com/playlist?list=${pl.sourceId}`,
+        if (event.oldVersion < 4) {
+            // 1. Clear and Reseed Channels
+            channelStore.clear(); 
+            DEFAULT_CHANNELS.forEach(cat => {
+                channelStore.add({
+                ...cat,
+                url: `https://www.youtube.com/channel/${cat.sourceId}`,
                 createdAt: Date.now()
+                });
             });
-        });
 
-        // 3. Update Tags
-        tagStore.clear();
-        DEFAULT_TAGS.forEach(tag => {
-            tagStore.add({ name: tag });
-        });
+            // 2. Clear and Reseed Playlists
+            playlistStore.clear();
+            DEFAULT_PLAYLISTS.forEach(pl => {
+                playlistStore.add({
+                    ...pl,
+                    url: `https://www.youtube.com/playlist?list=${pl.sourceId}`,
+                    createdAt: Date.now()
+                });
+            });
+
+            // 3. Update Tags
+            tagStore.clear();
+            DEFAULT_TAGS.forEach(tag => {
+                tagStore.add({ name: tag });
+            });
+        }
       };
 
       request.onsuccess = (event) => {
@@ -136,11 +145,13 @@ export class DBService {
 
   async exportFullDB(): Promise<Record<string, any[]>> {
     if (!this.db) throw new Error('DB not initialized');
-    const storeNames = ['auth', 'channels', 'playlists', 'favorites', 'tags', 'settings'];
+    const storeNames = ['auth', 'channels', 'playlists', 'favorites', 'watchLater', 'tags', 'settings'];
     const exportData: Record<string, any[]> = {};
 
     for (const name of storeNames) {
-        exportData[name] = await this.getAll(name);
+        if (this.db.objectStoreNames.contains(name)) {
+            exportData[name] = await this.getAll(name);
+        }
     }
     return exportData;
   }
@@ -149,15 +160,17 @@ export class DBService {
       return new Promise((resolve, reject) => {
           if (!this.db) return reject('DB not initialized');
           
-          const storeNames = ['auth', 'channels', 'playlists', 'favorites', 'tags', 'settings'];
+          const storeNames = ['auth', 'channels', 'playlists', 'favorites', 'watchLater', 'tags', 'settings'];
+          const validStores = storeNames.filter(name => this.db!.objectStoreNames.contains(name));
+
           // Open a transaction for all stores
-          const transaction = this.db.transaction(storeNames, 'readwrite');
+          const transaction = this.db.transaction(validStores, 'readwrite');
           
           transaction.oncomplete = () => resolve();
           transaction.onerror = () => reject(transaction.error);
           transaction.onabort = () => reject(transaction.error);
 
-          storeNames.forEach(storeName => {
+          validStores.forEach(storeName => {
               if (data[storeName] && Array.isArray(data[storeName])) {
                   const store = transaction.objectStore(storeName);
                   data[storeName].forEach(item => {
@@ -188,14 +201,14 @@ export class DBService {
     const tag = await this.getTagByName(tagName);
     if (!tag || !tag.id) return; 
 
-    const storeNames = ['tags', 'channels', 'playlists', 'favorites'];
+    const storeNames = ['tags', 'channels', 'playlists', 'favorites', 'watchLater'];
     const tx = this.db.transaction(storeNames, 'readwrite');
 
     // 2. Delete Tag from tags store
     tx.objectStore('tags').delete(tag.id);
 
     // 3. Cascade Delete: Remove string from all media items
-    ['channels', 'playlists', 'favorites'].forEach(storeName => {
+    ['channels', 'playlists', 'favorites', 'watchLater'].forEach(storeName => {
         const store = tx.objectStore(storeName);
         const req = store.openCursor();
         req.onsuccess = (e) => {
@@ -223,7 +236,7 @@ export class DBService {
       const tag = await this.getTagByName(oldName);
       if (!tag || !tag.id) return;
 
-      const storeNames = ['tags', 'channels', 'playlists', 'favorites'];
+      const storeNames = ['tags', 'channels', 'playlists', 'favorites', 'watchLater'];
       const tx = this.db.transaction(storeNames, 'readwrite');
 
       // 1. Update Tag Store
@@ -232,7 +245,7 @@ export class DBService {
       tagStore.put(tag);
 
       // 2. Cascade Update: Replace string in all media items
-      ['channels', 'playlists', 'favorites'].forEach(storeName => {
+      ['channels', 'playlists', 'favorites', 'watchLater'].forEach(storeName => {
           const store = tx.objectStore(storeName);
           const req = store.openCursor();
           req.onsuccess = (e) => {

@@ -1,8 +1,14 @@
 {
   "name": "nomad-media-player",
   "private": true,
-  "version": "0.0.0",
+  "version": "2.0.0",
   "type": "module",
+  "description": "A distraction-free workspace to store your favorite public channels, playlists, and videos locally.",
+  "author": "Nuno Luciano <nunoluciano@proton.me>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AI-Studio-Apps/nomad-media-player.git"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",

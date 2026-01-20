@@ -1,11 +1,13 @@
+
 import React, { useEffect, useState } from 'react';
 import { 
   Menu, Plus, Settings, Folder, List, Star, 
-  ChevronRight, ChevronDown, Trash2, LogOut, Info, Edit2, Youtube, Shield, Search, Tag as TagIcon, X, ExternalLink
+  ChevronRight, ChevronDown, Trash2, LogOut, Info, Edit2, Youtube, Shield, Search, Tag as TagIcon, X, ExternalLink, Bookmark, CheckSquare, Play
 } from 'lucide-react';
 import { dbService } from './services/db';
 import { cryptoService } from './services/crypto';
 import { youtubeService } from './services/youtube';
+import { mediaResolver } from './services/mediaResolver';
 import { MediaItem, ViewState, Tag, VideoItem } from './types';
 import { Button } from './components/Button';
 import { Input } from './components/Input';
@@ -31,6 +33,7 @@ function App() {
   const [channels, setChannels] = useState<MediaItem[]>([]);
   const [playlists, setPlaylists] = useState<MediaItem[]>([]);
   const [favorites, setFavorites] = useState<MediaItem[]>([]);
+  const [watchLater, setWatchLater] = useState<MediaItem[]>([]);
   const [tags, setTags] = useState<string[]>([]);
 
   // UI State
@@ -40,7 +43,8 @@ function App() {
     channels: true,
     playlists: true,
     favorites: true,
-    tags: true
+    tags: true,
+    watchLater: true
   });
   
   // Search State
@@ -102,15 +106,17 @@ function App() {
   };
 
   const loadData = async () => {
-    const [chans, plays, favs, tagList] = await Promise.all([
+    const [chans, plays, favs, wl, tagList] = await Promise.all([
       dbService.getAll<MediaItem>('channels'),
       dbService.getAll<MediaItem>('playlists'),
       dbService.getAll<MediaItem>('favorites'),
+      dbService.getAll<MediaItem>('watchLater'),
       dbService.getAll<Tag>('tags')
     ]);
     setChannels(chans);
     setPlaylists(plays);
     setFavorites(favs);
+    setWatchLater(wl);
     setTags(tagList.map(t => t.name));
   };
 
@@ -178,6 +184,8 @@ function App() {
 
     if (editingItem) {
         const updatedItem = { ...editingItem, ...itemData };
+        // Determine store based on original item type, unless it's a "watchLater" UI item which uses 'video' schema but different store
+        // However, editing is disabled for Watch Later in sidebar currently (simplification).
         await dbService.update(storeMap[itemData.type], updatedItem);
         if ((activeView as any).item?.id === editingItem.id) {
             setActiveView({ ...activeView, item: updatedItem } as ViewState);
@@ -188,6 +196,25 @@ function App() {
     }
     loadData();
     closeModal();
+  };
+
+  const handleAddToWatchLater = async (video: VideoItem) => {
+      // Check if already exists
+      const exists = watchLater.some(w => w.sourceId === video.id);
+      if (exists) return;
+
+      const mediaItem: MediaItem = {
+          name: video.title,
+          sourceId: video.id,
+          url: video.link,
+          type: 'video',
+          platform: video.platform,
+          tags: [],
+          createdAt: Date.now()
+      };
+      
+      await dbService.add('watchLater', mediaItem);
+      loadData();
   };
 
   const handleRenameTag = async (newName: string) => {
@@ -230,15 +257,14 @@ function App() {
     const storeMap: Record<string, string> = {
       'channel': 'channels',
       'playlist': 'playlists',
-      'video': 'favorites'
+      'video': 'favorites',
+      'watch_later': 'watchLater' // Map UI type 'watch_later' to DB store
     };
+
     await dbService.delete(storeMap[type], id);
     
-    if (
-        (activeView.type === 'channel' && activeView.item.id === id) ||
-        (activeView.type === 'playlist' && activeView.item.id === id) ||
-        (activeView.type === 'video' && activeView.item.id === id)
-    ) {
+    // Reset view if we just deleted the active item
+    if ((activeView as any).item?.id === id) {
         setActiveView({ type: 'dashboard' });
     }
     loadData();
@@ -255,7 +281,7 @@ function App() {
       loadData();
   };
 
-  const toggleSection = (section: 'channels' | 'playlists' | 'favorites' | 'tags') => {
+  const toggleSection = (section: keyof typeof expandedSections) => {
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
 
@@ -303,6 +329,18 @@ function App() {
       }).replace(/,/g, '');
   };
 
+  // Helper to convert MediaItem (from Watch Later) to VideoItem (for Player)
+  const mediaItemToVideoItem = (item: MediaItem): VideoItem => ({
+      id: item.sourceId,
+      title: item.name,
+      link: item.url,
+      pubDate: new Date(item.createdAt).toISOString(),
+      thumbnail: '', // Player handles loading via embed
+      author: item.platform || 'Unknown',
+      description: '',
+      platform: item.platform || 'youtube'
+  });
+
   if (!isDbReady) {
     return <div className="h-screen w-screen bg-background flex items-center justify-center text-zinc-400">Loading Secure Database...</div>;
   }
@@ -349,30 +387,42 @@ function App() {
     );
   }
 
-  const renderSidebarItem = (item: MediaItem, icon: React.ReactNode) => (
-    <div 
-      key={item.id}
-      onClick={() => setActiveView({ type: item.type as any, item })}
-      className={`group flex items-center justify-between p-2 pl-9 rounded-md cursor-pointer text-sm transition-colors ${
-        (activeView as any).item?.id === item.id 
-          ? 'bg-blue-600/20 text-blue-400' 
-          : 'text-zinc-400 hover:bg-zinc-800 hover:text-white'
-      }`}
-    >
-      <div className="flex items-center gap-2 truncate">
-        {icon}
-        <span className="truncate">{item.name}</span>
-      </div>
-      <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
-        <button onClick={(e) => handleEditClick(e, item)} className="text-zinc-500 hover:text-blue-400 p-1">
-            <Edit2 size={14} />
-        </button>
-        <button onClick={(e) => handleDelete(e, item.type, item.id!)} className="text-zinc-500 hover:text-red-400 p-1">
-            <Trash2 size={14} />
-        </button>
-      </div>
-    </div>
-  );
+  // Generic Sidebar Item Renderer with Section Awareness
+  const renderSidebarItem = (item: MediaItem, icon: React.ReactNode, section: string) => {
+    // Strict Highlight Logic: Match ID AND Section
+    const isActive = (activeView as any).item?.id === item.id && (activeView as any).section === section;
+    const isWatchLater = section === 'watch_later';
+    
+    // For delete handler, map section back to store type key if needed, or just pass context
+    // 'watch_later' maps to store 'watchLater' via the handleDelete logic map
+    
+    return (
+        <div 
+          key={item.id}
+          onClick={() => setActiveView({ type: item.type as any, item, section })}
+          className={`group flex items-center justify-between p-2 pl-9 rounded-md cursor-pointer text-sm transition-colors ${
+            isActive 
+              ? 'bg-blue-600/20 text-blue-400' 
+              : 'text-zinc-400 hover:bg-zinc-800 hover:text-white'
+          }`}
+        >
+          <div className="flex items-center gap-2 truncate">
+            {icon}
+            <span className="truncate">{item.name}</span>
+          </div>
+          <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+            {!isWatchLater && (
+                <button onClick={(e) => handleEditClick(e, item)} className="text-zinc-500 hover:text-blue-400 p-1">
+                    <Edit2 size={14} />
+                </button>
+            )}
+            <button onClick={(e) => handleDelete(e, section, item.id!)} className="text-zinc-500 hover:text-red-400 p-1">
+                <Trash2 size={14} />
+            </button>
+          </div>
+        </div>
+    );
+  };
 
   return (
     <div className="flex h-screen overflow-hidden bg-background text-zinc-200">
@@ -389,6 +439,7 @@ function App() {
         </div>
 
         <nav className="flex-1 overflow-y-auto p-2 space-y-1">
+          {/* Channels */}
           <div>
             <button onClick={() => toggleSection('channels')} className="w-full flex items-center justify-between p-2 text-zinc-300 hover:text-white font-medium">
               <div className="flex items-center gap-2">
@@ -399,12 +450,13 @@ function App() {
             </button>
             {expandedSections.channels && (
               <div className="space-y-0.5">
-                {channels.map(ch => renderSidebarItem(ch, <span className="w-1.5 h-1.5 rounded-full bg-green-400"></span>))}
+                {channels.map(ch => renderSidebarItem(ch, <span className="w-1.5 h-1.5 rounded-full bg-green-400"></span>, 'channels'))}
                 {channels.length === 0 && <div className="pl-9 p-2 text-xs text-zinc-600">No channels</div>}
               </div>
             )}
           </div>
 
+          {/* Playlists */}
           <div>
             <button onClick={() => toggleSection('playlists')} className="w-full flex items-center justify-between p-2 text-zinc-300 hover:text-white font-medium">
               <div className="flex items-center gap-2">
@@ -415,12 +467,13 @@ function App() {
             </button>
             {expandedSections.playlists && (
               <div className="space-y-0.5">
-                {playlists.map(pl => renderSidebarItem(pl, <span className="w-1.5 h-1.5 rounded-full bg-purple-400"></span>))}
+                {playlists.map(pl => renderSidebarItem(pl, <span className="w-1.5 h-1.5 rounded-full bg-purple-400"></span>, 'playlists'))}
                 {playlists.length === 0 && <div className="pl-9 p-2 text-xs text-zinc-600">No playlists</div>}
               </div>
             )}
           </div>
 
+          {/* Favorites */}
           <div>
             <button onClick={() => toggleSection('favorites')} className="w-full flex items-center justify-between p-2 text-zinc-300 hover:text-white font-medium">
               <div className="flex items-center gap-2">
@@ -431,12 +484,13 @@ function App() {
             </button>
             {expandedSections.favorites && (
               <div className="space-y-0.5">
-                {favorites.map(fav => renderSidebarItem(fav, <span className="w-1.5 h-1.5 rounded-full bg-yellow-400"></span>))}
+                {favorites.map(fav => renderSidebarItem(fav, <span className="w-1.5 h-1.5 rounded-full bg-yellow-400"></span>, 'favorites'))}
                 {favorites.length === 0 && <div className="pl-9 p-2 text-xs text-zinc-600">No favorites</div>}
               </div>
             )}
           </div>
 
+          {/* Tags */}
           <div>
             <button onClick={() => toggleSection('tags')} className="w-full flex items-center justify-between p-2 text-zinc-300 hover:text-white font-medium">
               <div className="flex items-center gap-2">
@@ -446,7 +500,7 @@ function App() {
               </div>
             </button>
             {expandedSections.tags && (
-              <div className="space-y-0.5 pb-4">
+              <div className="space-y-0.5">
                  {tags.map(tag => (
                    <div 
                     key={tag}
@@ -478,6 +532,24 @@ function App() {
                    </div>
                  ))}
                  {tags.length === 0 && <div className="pl-9 p-2 text-xs text-zinc-600">No tags</div>}
+              </div>
+            )}
+          </div>
+
+          {/* Watch Later - Below Tags */}
+          <div>
+            <button onClick={() => toggleSection('watchLater')} className="w-full flex items-center justify-between p-2 text-zinc-300 hover:text-white font-medium">
+              <div className="flex items-center gap-2">
+                {expandedSections.watchLater ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                <Bookmark size={18} />
+                <span>Watch Later</span>
+              </div>
+              <span className="bg-zinc-800 text-zinc-400 text-[10px] px-1.5 rounded">{watchLater.length}</span>
+            </button>
+            {expandedSections.watchLater && (
+              <div className="space-y-0.5 pb-4">
+                 {watchLater.map(item => renderSidebarItem(item, <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>, 'watch_later'))}
+                 {watchLater.length === 0 && <div className="pl-9 p-2 text-xs text-zinc-600">Queue is empty</div>}
               </div>
             )}
           </div>
@@ -535,6 +607,50 @@ function App() {
                   </div>
               </div>
 
+              {/* Watch Later Horizontal List */}
+              {watchLater.length > 0 && (
+                  <div className="mb-10">
+                      <h2 className="text-2xl font-bold text-white mb-4 flex items-center gap-2">
+                          <Bookmark size={24} className="text-blue-400" /> Watch Later
+                      </h2>
+                      <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-thin">
+                          {watchLater.slice().reverse().map(item => (
+                              <div 
+                                key={item.id} 
+                                className="min-w-[280px] w-[280px] bg-surface rounded-xl border border-zinc-700 hover:border-blue-500 transition-all cursor-pointer overflow-hidden flex flex-col group relative"
+                                onClick={() => setOverlayVideo(mediaItemToVideoItem(item))}
+                              >
+                                  <div className="aspect-video bg-black relative">
+                                        <img 
+                                            src={`https://i.ytimg.com/vi/${item.sourceId}/mqdefault.jpg`} 
+                                            onError={(e) => { (e.target as HTMLImageElement).src = 'https://via.placeholder.com/320x180?text=No+Preview'; }}
+                                            alt={item.name} 
+                                            className="w-full h-full object-cover" 
+                                        />
+                                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                            <div className="bg-white/20 p-2 rounded-full backdrop-blur-sm">
+                                                <Play size={24} className="text-white fill-white" />
+                                            </div>
+                                        </div>
+                                  </div>
+                                  <div className="p-3">
+                                      <h3 className="font-semibold text-white text-sm line-clamp-2 mb-1">{item.name}</h3>
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-xs text-zinc-500 uppercase">{item.platform}</span>
+                                        <button 
+                                            onClick={(e) => handleDelete(e, 'watch_later', item.id!)}
+                                            className="text-zinc-500 hover:text-red-400 text-xs"
+                                        >
+                                            Remove
+                                        </button>
+                                      </div>
+                                  </div>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
                 <div className="bg-surface p-6 rounded-xl border border-zinc-700 hover:border-blue-500 cursor-pointer transition-all hover:shadow-lg hover:shadow-blue-500/10" onClick={() => setModalType('channel')}>
                     <div className="w-12 h-12 bg-green-500/20 text-green-400 rounded-lg flex items-center justify-center mb-4"><Youtube size={24} /></div>
@@ -557,7 +673,7 @@ function App() {
               </div>
 
               {/* Random Discovery Component */}
-              <RandomDiscovery channels={channels} onVideoClick={setOverlayVideo} />
+              <RandomDiscovery channels={channels} onVideoClick={setOverlayVideo} onBookmark={handleAddToWatchLater} />
 
               <div>
                   <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
@@ -589,7 +705,7 @@ function App() {
                         <h2 className="text-lg font-semibold text-green-400 mb-3 flex items-center gap-2"><Youtube size={18} /> Sources</h2>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {getFilteredItems(activeView.query, channels).map(item => (
-                                <div key={item.id} onClick={() => setActiveView({ type: 'channel', item })} className="bg-surface border border-zinc-700 p-4 rounded-lg cursor-pointer hover:border-green-500 transition-colors">
+                                <div key={item.id} onClick={() => setActiveView({ type: 'channel', item, section: 'channels' })} className="bg-surface border border-zinc-700 p-4 rounded-lg cursor-pointer hover:border-green-500 transition-colors">
                                     <h3 className="font-bold text-white">{item.name}</h3>
                                     <p className="text-xs text-zinc-500 truncate mt-1">ID: {item.sourceId}</p>
                                 </div>
@@ -603,7 +719,7 @@ function App() {
                         <h2 className="text-lg font-semibold text-purple-400 mb-3 flex items-center gap-2"><List size={18} /> Study Paths</h2>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {getFilteredItems(activeView.query, playlists).map(item => (
-                                <div key={item.id} onClick={() => setActiveView({ type: 'playlist', item })} className="bg-surface border border-zinc-700 p-4 rounded-lg cursor-pointer hover:border-purple-500 transition-colors">
+                                <div key={item.id} onClick={() => setActiveView({ type: 'playlist', item, section: 'playlists' })} className="bg-surface border border-zinc-700 p-4 rounded-lg cursor-pointer hover:border-purple-500 transition-colors">
                                     <h3 className="font-bold text-white">{item.name}</h3>
                                     <p className="text-xs text-zinc-500 truncate mt-1">ID: {item.sourceId}</p>
                                 </div>
@@ -617,7 +733,7 @@ function App() {
                         <h2 className="text-lg font-semibold text-yellow-400 mb-3 flex items-center gap-2"><Star size={18} /> References</h2>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {getFilteredItems(activeView.query, favorites).map(item => (
-                                <div key={item.id} onClick={() => setActiveView({ type: 'video', item })} className="bg-surface border border-zinc-700 p-4 rounded-lg cursor-pointer hover:border-yellow-500 transition-colors">
+                                <div key={item.id} onClick={() => setActiveView({ type: 'video', item, section: 'favorites' })} className="bg-surface border border-zinc-700 p-4 rounded-lg cursor-pointer hover:border-yellow-500 transition-colors">
                                     <h3 className="font-bold text-white truncate">{item.name}</h3>
                                     <div className="flex flex-wrap gap-1 mt-2">
                                         {item.tags?.map(t => <span key={t} className="text-[10px] bg-zinc-800 text-zinc-300 px-1.5 py-0.5 rounded border border-zinc-600">#{t}</span>)}
@@ -644,7 +760,7 @@ function App() {
                         <h2 className="text-lg font-semibold text-green-400 mb-3 flex items-center gap-2"><Youtube size={18} /> Sources</h2>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {getTaggedItems(activeView.tag, channels).map(item => (
-                                <div key={item.id} onClick={() => setActiveView({ type: 'channel', item })} className="bg-surface border border-zinc-700 p-4 rounded-lg cursor-pointer hover:border-green-500 transition-colors">
+                                <div key={item.id} onClick={() => setActiveView({ type: 'channel', item, section: 'channels' })} className="bg-surface border border-zinc-700 p-4 rounded-lg cursor-pointer hover:border-green-500 transition-colors">
                                     <h3 className="font-bold text-white">{item.name}</h3>
                                     <div className="flex flex-wrap gap-1 mt-2">
                                         {item.tags?.map(t => <span key={t} className="text-[10px] bg-zinc-800 text-zinc-300 px-1.5 py-0.5 rounded border border-zinc-600">#{t}</span>)}
@@ -660,7 +776,7 @@ function App() {
                         <h2 className="text-lg font-semibold text-purple-400 mb-3 flex items-center gap-2"><List size={18} /> Study Paths</h2>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {getTaggedItems(activeView.tag, playlists).map(item => (
-                                <div key={item.id} onClick={() => setActiveView({ type: 'playlist', item })} className="bg-surface border border-zinc-700 p-4 rounded-lg cursor-pointer hover:border-purple-500 transition-colors">
+                                <div key={item.id} onClick={() => setActiveView({ type: 'playlist', item, section: 'playlists' })} className="bg-surface border border-zinc-700 p-4 rounded-lg cursor-pointer hover:border-purple-500 transition-colors">
                                     <h3 className="font-bold text-white">{item.name}</h3>
                                     <div className="flex flex-wrap gap-1 mt-2">
                                         {item.tags?.map(t => <span key={t} className="text-[10px] bg-zinc-800 text-zinc-300 px-1.5 py-0.5 rounded border border-zinc-600">#{t}</span>)}
@@ -676,7 +792,7 @@ function App() {
                         <h2 className="text-lg font-semibold text-yellow-400 mb-3 flex items-center gap-2"><Star size={18} /> References</h2>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {getTaggedItems(activeView.tag, favorites).map(item => (
-                                <div key={item.id} onClick={() => setActiveView({ type: 'video', item })} className="bg-surface border border-zinc-700 p-4 rounded-lg cursor-pointer hover:border-yellow-500 transition-colors">
+                                <div key={item.id} onClick={() => setActiveView({ type: 'video', item, section: 'favorites' })} className="bg-surface border border-zinc-700 p-4 rounded-lg cursor-pointer hover:border-yellow-500 transition-colors">
                                     <h3 className="font-bold text-white truncate">{item.name}</h3>
                                     <div className="flex flex-wrap gap-1 mt-2">
                                         {item.tags?.map(t => <span key={t} className="text-[10px] bg-zinc-800 text-zinc-300 px-1.5 py-0.5 rounded border border-zinc-600">#{t}</span>)}
@@ -691,7 +807,7 @@ function App() {
           )}
 
           {(activeView.type === 'channel' || activeView.type === 'playlist' || activeView.type === 'video') && (
-            <FeedViewer item={(activeView as any).item} />
+            <FeedViewer item={(activeView as any).item} onBookmark={handleAddToWatchLater} />
           )}
 
           {activeView.type === 'settings' && sessionKey && <SettingsPanel sessionKey={sessionKey} />}
@@ -724,24 +840,33 @@ function App() {
         </div>
       </main>
 
-      {/* Global Overlay Video Player for Random Discovery */}
+      {/* Global Overlay Video Player for Random Discovery & Watch Later */}
       {overlayVideo && (
         <div className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 md:p-8" onClick={() => setOverlayVideo(null)}>
             <div className="w-full max-w-5xl bg-surface rounded-2xl overflow-hidden shadow-2xl border border-zinc-700 flex flex-col" onClick={e => e.stopPropagation()}>
                 <div className="p-4 border-b border-zinc-700 flex items-center justify-between bg-zinc-900">
                     <h3 className="font-semibold text-white truncate pr-4">{overlayVideo.title}</h3>
-                    <button 
-                        onClick={() => setOverlayVideo(null)}
-                        className="p-1 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-full transition-colors"
-                    >
-                        <X size={24} />
-                    </button>
+                    <div className="flex items-center gap-3">
+                        <button 
+                            onClick={(e) => handleAddToWatchLater(overlayVideo)}
+                            className="text-zinc-400 hover:text-white"
+                            title="Add to Watch Later"
+                        >
+                            <Bookmark size={20} />
+                        </button>
+                        <button 
+                            onClick={() => setOverlayVideo(null)}
+                            className="p-1 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-full transition-colors"
+                        >
+                            <X size={24} />
+                        </button>
+                    </div>
                 </div>
                 <div className="aspect-video bg-black w-full">
                     <iframe
                         width="100%"
                         height="100%"
-                        src={`https://www.youtube.com/embed/${overlayVideo.id}?autoplay=1`}
+                        src={mediaResolver.getEmbedUrl({ platform: overlayVideo.platform, sourceId: overlayVideo.id })}
                         title={overlayVideo.title}
                         frameBorder="0"
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -751,7 +876,7 @@ function App() {
                 <div className="p-4 bg-zinc-900 text-sm flex justify-between items-center text-zinc-400">
                     <span>{new Date(overlayVideo.pubDate).toLocaleString()}</span>
                     <a href={overlayVideo.link} target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:text-white">
-                        Watch on YouTube <ExternalLink size={14} />
+                        Watch on {overlayVideo.platform} <ExternalLink size={14} />
                     </a>
                 </div>
             </div>

@@ -1,25 +1,27 @@
 
 import React, { useEffect, useState } from 'react';
-import { Sparkles, Play, RotateCcw, Clock } from 'lucide-react';
+import { Sparkles, Play, RotateCcw, Clock, Bookmark, Check } from 'lucide-react';
 import { MediaItem, VideoItem } from '../types';
 import { dbService } from '../services/db';
-import { youtubeService } from '../services/youtube';
+import { mediaResolver } from '../services/mediaResolver';
 
 interface RandomDiscoveryProps {
   channels: MediaItem[];
   onVideoClick: (video: VideoItem) => void;
+  onBookmark?: (video: VideoItem) => void;
 }
 
 const CACHE_DURATION_MS = 8 * 60 * 60 * 1000; // 8 Hours
 
-export const RandomDiscovery: React.FC<RandomDiscoveryProps> = ({ channels, onVideoClick }) => {
+export const RandomDiscovery: React.FC<RandomDiscoveryProps> = ({ channels, onVideoClick, onBookmark }) => {
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadContent();
-  }, [channels]); // Reload if channels change, though mostly we rely on DB cache
+  }, [channels]);
 
   const loadContent = async (forceRefresh = false) => {
     if (channels.length === 0) {
@@ -42,19 +44,15 @@ export const RandomDiscovery: React.FC<RandomDiscoveryProps> = ({ channels, onVi
       }
 
       // 2. Refresh Content (Fetch Logic)
-      // Pick 3 random channels
       const shuffled = [...channels].sort(() => 0.5 - Math.random());
       const selectedChannels = shuffled.slice(0, 3);
-
       const newVideos: VideoItem[] = [];
 
-      // Fetch 1 video from each selected channel
-      // We process sequentially to be gentle on rate limits, or parallel for speed. Parallel is fine here.
       await Promise.all(selectedChannels.map(async (channel) => {
         try {
-          const channelVideos = await youtubeService.getVideos(channel);
+          const channelVideos = await mediaResolver.getVideos(channel);
           if (channelVideos.length > 0) {
-            newVideos.push(channelVideos[0]); // Take the latest
+            newVideos.push(channelVideos[0]);
           }
         } catch (e) {
           console.warn(`Failed to fetch discovery for ${channel.name}`, e);
@@ -75,7 +73,6 @@ export const RandomDiscovery: React.FC<RandomDiscoveryProps> = ({ channels, onVi
         setVideos(newVideos);
         setLastUpdated(now);
       } else if (cache?.videos) {
-         // If fetch failed but we had old cache, keep old cache
          setVideos(cache.videos);
       }
 
@@ -83,6 +80,14 @@ export const RandomDiscovery: React.FC<RandomDiscoveryProps> = ({ channels, onVi
       console.error("Discovery error", e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleBookmark = (e: React.MouseEvent, vid: VideoItem) => {
+    e.stopPropagation();
+    if (onBookmark) {
+        onBookmark(vid);
+        setBookmarkedIds(prev => new Set(prev).add(vid.id));
     }
   };
 
@@ -105,7 +110,7 @@ export const RandomDiscovery: React.FC<RandomDiscoveryProps> = ({ channels, onVi
             <button 
                 onClick={() => loadContent(true)}
                 className="flex items-center gap-1 text-xs text-zinc-400 hover:text-primary transition-colors"
-                title="Force refresh (uses API quota)"
+                title="Force refresh"
             >
                 <RotateCcw size={14} /> Refresh
             </button>
@@ -127,7 +132,7 @@ export const RandomDiscovery: React.FC<RandomDiscoveryProps> = ({ channels, onVi
                 onClick={() => onVideoClick(video)}
             >
               <img 
-                src={video.thumbnail} 
+                src={video.thumbnail || 'https://via.placeholder.com/640x360.png?text=No+Preview'} 
                 alt={video.title} 
                 className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
               />
@@ -135,6 +140,17 @@ export const RandomDiscovery: React.FC<RandomDiscoveryProps> = ({ channels, onVi
               {/* Overlay Gradient */}
               <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent p-4 flex flex-col justify-end">
                 <div className="transform translate-y-2 group-hover:translate-y-0 transition-transform duration-300">
+                    <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] uppercase bg-white/20 px-1.5 rounded text-white backdrop-blur-md">{video.platform}</span>
+                        {onBookmark && (
+                            <button 
+                                onClick={(e) => handleBookmark(e, video)}
+                                className={`p-1.5 rounded-full backdrop-blur-md transition-colors ${bookmarkedIds.has(video.id) ? 'bg-green-500 text-white' : 'bg-white/20 text-white hover:bg-white/40'}`}
+                            >
+                                {bookmarkedIds.has(video.id) ? <Check size={12} /> : <Bookmark size={12} />}
+                            </button>
+                        )}
+                    </div>
                     <h3 className="text-white font-semibold line-clamp-2 text-sm mb-1">{video.title}</h3>
                     <p className="text-zinc-400 text-xs flex items-center gap-1">
                         {video.author}
@@ -143,7 +159,7 @@ export const RandomDiscovery: React.FC<RandomDiscoveryProps> = ({ channels, onVi
               </div>
 
               {/* Play Button Overlay */}
-              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-black/20 backdrop-blur-[1px]">
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
                   <div className="bg-white/20 p-3 rounded-full backdrop-blur-md">
                       <Play fill="white" className="text-white" size={24} />
                   </div>

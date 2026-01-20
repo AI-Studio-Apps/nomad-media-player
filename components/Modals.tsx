@@ -1,9 +1,11 @@
+
 import React, { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
+import { X, Globe } from 'lucide-react';
 import { Button } from './Button';
 import { Input } from './Input';
 import { MediaItem } from '../types';
 import { TagInput } from './TagInput';
+import { mediaResolver } from '../services/mediaResolver';
 
 interface ModalProps {
   isOpen: boolean;
@@ -52,77 +54,59 @@ export const AddItemForm: React.FC<AddItemFormProps> = ({
   const [name, setName] = useState('');
   const [sourceInput, setSourceInput] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [detectedPlatform, setDetectedPlatform] = useState<string | null>(null);
 
   useEffect(() => {
     if (initialData) {
         setName(initialData.name);
-        setSourceInput(initialData.sourceId);
+        setSourceInput(initialData.sourceId); // Or URL if stored
         if (initialData.tags) {
             setSelectedTags(initialData.tags);
+        }
+        if (initialData.platform) {
+            setDetectedPlatform(initialData.platform);
         }
     }
   }, [initialData]);
 
-  const extractId = (input: string): string => {
-    let text = input.trim();
-    
-    // Handle Iframe paste
-    if (text.includes('<iframe')) {
-        const srcMatch = text.match(/src=["'](.*?)["']/);
-        if (srcMatch) text = srcMatch[1];
-    }
-
-    try {
-        const url = new URL(text);
-        if (type === 'video') {
-            if (url.searchParams.has('v')) return url.searchParams.get('v') || '';
-            if (url.pathname.startsWith('/embed/')) {
-                // Remove /embed/ and any trailing slash
-                return url.pathname.replace('/embed/', '').replace(/\/$/, '');
-            }
-            if (url.hostname.includes('youtu.be')) return url.pathname.slice(1);
-        }
-        if (type === 'playlist') {
-            if (url.searchParams.has('list')) return url.searchParams.get('list') || '';
-        }
-        if (type === 'channel') {
-            if (url.pathname.startsWith('/channel/')) return url.pathname.split('/channel/')[1];
-            // Handle custom URLs like /c/Username or @Handle - we can't extract ID easily without API. 
-            // For now, assume user provides ID or standard channel link.
-        }
-        // If parsing succeeds but no specific pattern matches, return the input (might be clean ID but valid URL format somehow)
-        return text; 
-    } catch {
-        // Not a URL, assume it is the ID
-        return text;
-    }
+  // Live detection feedback
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const val = e.target.value;
+      setSourceInput(val);
+      if (val.trim()) {
+          const result = mediaResolver.detectSource(val, type);
+          setDetectedPlatform(result.platform);
+      } else {
+          setDetectedPlatform(null);
+      }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    const cleanId = extractId(sourceInput);
+    // Resolve platform and clean ID
+    const result = mediaResolver.detectSource(sourceInput, type);
 
-    if (!cleanId) {
-        alert("Could not extract a valid ID.");
+    if (!result.sourceId) {
+        alert("Could not detect a valid ID.");
         return;
     }
     
     // Construct standard web URLs for reference
-    let url = '';
-    if (type === 'channel') {
-      url = `https://www.youtube.com/channel/${cleanId}`;
-    } else if (type === 'playlist') {
-      url = `https://www.youtube.com/playlist?list=${cleanId}`;
-    } else {
-      url = `https://www.youtube.com/watch?v=${cleanId}`;
+    let url = sourceInput;
+    if (!sourceInput.startsWith('http')) {
+        // Reconstruct URL based on platform if user only pasted ID
+        if (result.platform === 'youtube') url = `https://youtube.com/watch?v=${result.sourceId}`;
+        if (result.platform === 'vimeo') url = `https://vimeo.com/${result.sourceId}`;
+        if (result.platform === 'dailymotion') url = `https://dailymotion.com/video/${result.sourceId}`;
     }
 
     onSave({
       name,
-      sourceId: cleanId,
+      sourceId: result.sourceId,
       url,
-      type,
+      type: result.type, // Resolver might correct the type (e.g., user clicked Channel but pasted a Playlist URL)
+      platform: result.platform,
       tags: selectedTags
     });
     onClose();
@@ -134,21 +118,29 @@ export const AddItemForm: React.FC<AddItemFormProps> = ({
         label="Name" 
         value={name} 
         onChange={e => setName(e.target.value)} 
-        placeholder={`My Awesome ${type === 'channel' ? 'Channel' : type === 'playlist' ? 'Playlist' : 'Video'}`}
+        placeholder={`My Awesome ${type === 'channel' ? 'Source' : type === 'playlist' ? 'Path' : 'Reference'}`}
         required
       />
-      <Input 
-        label={type === 'channel' ? 'Channel ID (UC...)' : type === 'playlist' ? 'Playlist ID (PL...)' : 'Video ID'} 
-        value={sourceInput} 
-        onChange={e => setSourceInput(e.target.value)} 
-        placeholder={type === 'channel' ? "e.g. UCX6b17PVsYBQ0ip5gyeme-Q" : "Paste ID or URL"}
-        required
-      />
-      {type === 'channel' && (
-          <p className="text-xs text-zinc-500">
-              Note: You must use the Channel ID (starts with UC). Custom URLs (@User) are not supported yet without an API search.
-          </p>
-      )}
+      
+      <div className="relative">
+          <Input 
+            label="Source URL or ID" 
+            value={sourceInput} 
+            onChange={handleInputChange} 
+            placeholder="Paste URL (YouTube, Vimeo, Dailymotion)..."
+            required
+          />
+          {detectedPlatform && (
+              <div className="absolute right-3 top-[34px] flex items-center gap-1 text-xs text-primary bg-blue-900/20 px-2 py-0.5 rounded border border-blue-900">
+                  <Globe size={10} />
+                  <span className="capitalize">{detectedPlatform}</span>
+              </div>
+          )}
+      </div>
+
+      <p className="text-xs text-zinc-500">
+          Supports: YouTube, Vimeo, and Dailymotion URLs.
+      </p>
       
       <TagInput 
         selectedTags={selectedTags}

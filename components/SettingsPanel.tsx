@@ -1,8 +1,10 @@
+
 import React, { useEffect, useState, useRef } from 'react';
-import { Save, Key, ExternalLink, CheckCircle, AlertCircle, Lock, Database, Download, Upload } from 'lucide-react';
+import { Save, Key, CheckCircle, AlertCircle, Lock, Database, Download, Upload, Globe } from 'lucide-react';
 import { dbService } from '../services/db';
 import { cryptoService } from '../services/crypto';
 import { youtubeService } from '../services/youtube';
+import { DEFAULT_PROXY_1, DEFAULT_PROXY_2 } from '../services/proxy';
 import { Button } from './Button';
 import { Input } from './Input';
 
@@ -12,10 +14,19 @@ interface SettingsPanelProps {
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({ sessionKey }) => {
   const [apiKey, setApiKey] = useState('');
+  
+  // Proxy State
+  const [customProxy, setCustomProxy] = useState('');
+  const [proxy1, setProxy1] = useState(DEFAULT_PROXY_1);
+  const [proxy2, setProxy2] = useState(DEFAULT_PROXY_2);
+
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [statusMsg, setStatusMsg] = useState('');
   
+  const [proxyStatus, setProxyStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [proxyMsg, setProxyMsg] = useState('');
+
   // Backup State
   const [backupStatus, setBackupStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [backupMsg, setBackupMsg] = useState('');
@@ -33,6 +44,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ sessionKey }) => {
         const decrypted = await cryptoService.decryptData(settings.apiKey, sessionKey);
         setApiKey(decrypted);
       }
+      
+      // Load Proxies or defaults
+      setCustomProxy(settings?.customProxyUrl || '');
+      setProxy1(settings?.proxy1Url || DEFAULT_PROXY_1);
+      setProxy2(settings?.proxy2Url || DEFAULT_PROXY_2);
+
     } catch (e) {
       console.error(e);
       setStatus('error');
@@ -42,7 +59,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ sessionKey }) => {
     }
   };
 
-  const handleSave = async (e: React.FormEvent) => {
+  const handleSaveApiKey = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!apiKey.trim()) return;
     
@@ -61,8 +78,14 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ sessionKey }) => {
         // Encrypt the key before saving
         const encryptedData = await cryptoService.encryptData(apiKey.trim(), sessionKey);
         
+        // Get existing settings to preserve other fields
+        const currentSettings = await dbService.getSettings() || {};
+
         // Save to DB
-        await dbService.saveSettings({ apiKey: encryptedData });
+        await dbService.saveSettings({ 
+            ...currentSettings,
+            apiKey: encryptedData 
+        });
         
         // Update the in-memory service immediately
         youtubeService.setApiKey(apiKey.trim());
@@ -73,6 +96,29 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ sessionKey }) => {
         setStatus('error');
         setStatusMsg(error.message);
     }
+  };
+
+  const handleSaveProxy = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setProxyStatus('idle');
+
+      try {
+        // Get existing settings
+        const currentSettings = await dbService.getSettings() || {};
+        
+        await dbService.saveSettings({
+            ...currentSettings,
+            customProxyUrl: customProxy.trim(),
+            proxy1Url: proxy1.trim(),
+            proxy2Url: proxy2.trim()
+        });
+
+        setProxyStatus('success');
+        setProxyMsg('Proxy failover chain updated.');
+      } catch (e: any) {
+          setProxyStatus('error');
+          setProxyMsg('Failed to save settings.');
+      }
   };
 
   const handleExport = async () => {
@@ -119,7 +165,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ sessionKey }) => {
               await dbService.importFullDB(data);
               setBackupStatus('success');
               setBackupMsg('Database imported successfully. Please reload the page to see changes.');
-              // Optional: window.location.reload();
           } catch (err: any) {
               console.error(err);
               setBackupStatus('error');
@@ -127,7 +172,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ sessionKey }) => {
           }
       };
       reader.readAsText(file);
-      e.target.value = ''; // Reset so same file can be selected again if needed
+      e.target.value = '';
   };
 
   if (loading) return <div>Loading secure settings...</div>;
@@ -149,7 +194,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ sessionKey }) => {
         
         {/* API Key Section */}
         <div className="bg-surface border border-zinc-700 rounded-xl p-6">
-            <form onSubmit={handleSave} className="space-y-6">
+            <form onSubmit={handleSaveApiKey} className="space-y-6">
                 <div className="flex items-start gap-4">
                     <div className="bg-zinc-900 p-3 rounded-lg text-primary">
                         <Key size={24} />
@@ -158,7 +203,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ sessionKey }) => {
                         <div>
                             <h3 className="text-lg font-medium text-white mb-1">YouTube API Key</h3>
                             <p className="text-sm text-zinc-400 mb-4">
-                                Required to fetch channel and playlist data.
+                                Required to fetch YouTube channel and playlist data.
                             </p>
                             <Input 
                                 value={apiKey}
@@ -179,6 +224,71 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ sessionKey }) => {
                         <div className="flex justify-end">
                             <Button type="submit">
                                 <Save size={16} className="mr-2" /> Encrypt & Save
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        {/* Proxy Settings */}
+        <div className="bg-surface border border-zinc-700 rounded-xl p-6">
+            <form onSubmit={handleSaveProxy} className="space-y-6">
+                <div className="flex items-start gap-4">
+                    <div className="bg-zinc-900 p-3 rounded-lg text-blue-400">
+                        <Globe size={24} />
+                    </div>
+                    <div className="flex-1 space-y-4">
+                        <div>
+                            <h3 className="text-lg font-medium text-white mb-1">Network & Homelab</h3>
+                            <p className="text-sm text-zinc-400 mb-4">
+                                Configure CORS proxies for fetching RSS feeds (e.g. Vimeo). 
+                                The application will try these in order until one succeeds.
+                            </p>
+                            
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-semibold text-green-400 mb-1">Proxy 1 (Default)</label>
+                                    <Input 
+                                        value={proxy1}
+                                        onChange={e => setProxy1(e.target.value)}
+                                        placeholder="https://api.allorigins.win/raw?url="
+                                    />
+                                </div>
+                                
+                                <div>
+                                    <label className="block text-xs font-semibold text-yellow-400 mb-1">Proxy 2 (Fallback)</label>
+                                    <Input 
+                                        value={proxy2}
+                                        onChange={e => setProxy2(e.target.value)}
+                                        placeholder="https://corsproxy.io/?"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-semibold text-primary mb-1">Proxy 3 (Custom / Homelab)</label>
+                                    <Input 
+                                        value={customProxy}
+                                        onChange={e => setCustomProxy(e.target.value)}
+                                        placeholder="https://my-proxy.homelab.local/?url="
+                                    />
+                                    <p className="text-xs text-zinc-500 mt-2">
+                                        If set, this custom proxy is attempted first. Ensure it ends with the query parameter (e.g. <code>?url=</code>).
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {proxyStatus !== 'idle' && (
+                            <div className={`flex items-center gap-2 text-sm p-3 rounded-md ${proxyStatus === 'success' ? 'bg-green-900/20 text-green-400 border border-green-900' : 'bg-red-900/20 text-red-400 border border-red-900'}`}>
+                                {proxyStatus === 'success' ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
+                                {proxyMsg}
+                            </div>
+                        )}
+
+                        <div className="flex justify-end">
+                            <Button type="submit" variant="secondary">
+                                <Save size={16} className="mr-2" /> Save Configuration
                             </Button>
                         </div>
                     </div>
@@ -223,23 +333,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ sessionKey }) => {
                     )}
                 </div>
              </div>
-        </div>
-
-        {/* Instructions */}
-        <div className="p-6 bg-zinc-900/50 rounded-xl border border-zinc-800">
-            <h3 className="font-semibold text-white mb-4">How to get an API Key</h3>
-            <ol className="list-decimal list-inside space-y-3 text-zinc-400 text-sm">
-                <li>Go to the <a href="https://console.cloud.google.com/" target="_blank" className="text-primary hover:underline inline-flex items-center">Google Cloud Console <ExternalLink size={10} className="ml-1" /></a>.</li>
-                <li>Create a new project (e.g., "Nomad Media Player").</li>
-                <li>Navigate to "APIs & Services" &gt; "Library".</li>
-                <li>Search for and enable <strong>YouTube Data API v3</strong>.</li>
-                <li>Go to "Credentials" and create a new <strong>API Key</strong>.</li>
-                <li>(Optional) Restrict the key to <code>HTTP Referrers</code> (add <code>http://localhost:3000</code> or your domain).</li>
-                <li>Copy the key and paste it above.</li>
-            </ol>
-            <div className="mt-4 text-xs text-zinc-500">
-                Note: The free quota allows for ~10,000 requests per day.
-            </div>
         </div>
 
       </div>
