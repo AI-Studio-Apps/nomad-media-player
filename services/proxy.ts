@@ -42,20 +42,31 @@ export const proxyService = {
             const cleanKey = key ? key.trim() : '';
             const baseUrl = cleanUrl.endsWith('/') ? cleanUrl : `${cleanUrl}/`;
             
-            // Test fetching Google favicon or a small text file
-            // Note: We trim the target too, just in case.
-            const testTarget = 'https://www.google.com/robots.txt'; 
+            // Test fetching a highly-available, neutral target.
+            // Google/Robots.txt is often blocked by data centers, causing Worker errors (500)
+            // which leads to missing CORS headers.
+            // captive.apple.com is designed for connectivity checks and returns "Success".
+            const testTarget = 'https://captive.apple.com/hotspot-detect.html'; 
             const fetchUrl = `${baseUrl}?url=${encodeURIComponent(testTarget)}`;
             
+            console.log(`[Proxy Test] Fetching: ${fetchUrl}`);
+
             const res = await fetch(fetchUrl, {
-                headers: { 'X-Proxy-Key': cleanKey }
+                method: 'GET',
+                mode: 'cors', // Explicitly request CORS
+                cache: 'no-store', // Prevent browser from using cached failed CORS responses
+                credentials: 'omit', // Do not send cookies
+                headers: { 
+                    'X-Proxy-Key': cleanKey 
+                }
             });
 
             if (res.status === 403 || res.status === 401) {
                 throw new Error("Invalid Key (403)");
             }
             if (res.status >= 500) {
-                throw new Error(`Server Error (${res.status})`);
+                // This is common if the Worker is blocked by the target, or if the Worker script crashed
+                throw new Error(`Server Error (${res.status}) - Worker may be blocked by target`);
             }
             if (!res.ok) {
                 throw new Error(`HTTP Error ${res.status}`);
@@ -64,11 +75,16 @@ export const proxyService = {
             const text = await res.text();
             if (!text) throw new Error("Empty Response");
 
+            // Simple validation that we got expected content
+            if (!text.includes('Success') && !text.toLowerCase().includes('html')) {
+                 throw new Error("Invalid response content");
+            }
+
         } catch (e: any) {
             console.error("Test connection failed", e);
             // Distinguish CORS/Network errors (often caused by 500s on Preflight)
             if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
-                 throw new Error("Network/CORS Error (Check Server Logs)");
+                 throw new Error("CORS/Network Error. Check Worker 'Allowed Origins' or Key.");
             }
             throw e;
         }
@@ -96,7 +112,9 @@ export const proxyService = {
                 const fetchUrl = `${baseUrl}?url=${encodeURIComponent(cleanTarget)}`;
                 
                 const res = await fetch(fetchUrl, {
-                    headers: { 'X-Proxy-Key': MEMORY_NOMAD_KEY } // Key is already trimmed by setter
+                    headers: { 'X-Proxy-Key': MEMORY_NOMAD_KEY }, // Key is already trimmed by setter
+                    mode: 'cors',
+                    credentials: 'omit'
                 });
 
                 if (!res.ok) {
