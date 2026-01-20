@@ -43,29 +43,27 @@ export const proxyService = {
             const baseUrl = cleanUrl.endsWith('/') ? cleanUrl : `${cleanUrl}/`;
             
             // Test fetching a highly-available, neutral target.
-            // Google/Robots.txt is often blocked by data centers, causing Worker errors (500)
-            // which leads to missing CORS headers.
-            // captive.apple.com is designed for connectivity checks and returns "Success".
             const testTarget = 'https://captive.apple.com/hotspot-detect.html'; 
-            const fetchUrl = `${baseUrl}?url=${encodeURIComponent(testTarget)}`;
             
-            console.log(`[Proxy Test] Fetching: ${fetchUrl}`);
+            // We pass the key as a Query Parameter ("&key=") instead of a Header ("X-Proxy-Key").
+            // Custom Headers OR non-safelisted headers (like Cache-Control) trigger a CORS Preflight (OPTIONS).
+            // We must ensure this is a "Simple Request" to avoid OPTIONS issues with the Worker.
+            const fetchUrl = `${baseUrl}?url=${encodeURIComponent(testTarget)}&key=${encodeURIComponent(cleanKey)}`;
+            
+            // Mask the key in logs for security best practices
+            const logUrl = `${baseUrl}?url=${encodeURIComponent(testTarget)}&key=***`;
+            console.log(`[Proxy Test] Fetching: ${logUrl}`);
 
             const res = await fetch(fetchUrl, {
                 method: 'GET',
                 mode: 'cors', // Explicitly request CORS
-                cache: 'no-store', // Prevent browser from using cached failed CORS responses
-                credentials: 'omit', // Do not send cookies
-                headers: { 
-                    'X-Proxy-Key': cleanKey 
-                }
+                credentials: 'omit', // Do not send cookies. Essential for Simple Request if user has cookies for domain.
             });
 
             if (res.status === 403 || res.status === 401) {
                 throw new Error("Invalid Key (403)");
             }
             if (res.status >= 500) {
-                // This is common if the Worker is blocked by the target, or if the Worker script crashed
                 throw new Error(`Server Error (${res.status}) - Worker may be blocked by target`);
             }
             if (!res.ok) {
@@ -100,19 +98,17 @@ export const proxyService = {
         // 1. Priority: Nomad Proxy (Authenticated)
         if (MEMORY_NOMAD_KEY) {
             try {
-                // Ensure no spaces in worker URL
-                // Check if MEMORY_NOMAD_URL is set, else check settings, else default.
-                // Handle empty string in settings:
                 const settingUrl = (settings?.nomadUrl && settings.nomadUrl.trim() !== '') ? settings.nomadUrl : null;
                 const rawWorkerUrl = MEMORY_NOMAD_URL || settingUrl || DEFAULT_NOMAD_URL;
                 
                 const workerUrl = rawWorkerUrl.trim();
                 const baseUrl = workerUrl.endsWith('/') ? workerUrl : `${workerUrl}/`;
                 
-                const fetchUrl = `${baseUrl}?url=${encodeURIComponent(cleanTarget)}`;
+                // Pass key as Query Param to avoid CORS Preflight
+                const fetchUrl = `${baseUrl}?url=${encodeURIComponent(cleanTarget)}&key=${encodeURIComponent(MEMORY_NOMAD_KEY)}`;
                 
                 const res = await fetch(fetchUrl, {
-                    headers: { 'X-Proxy-Key': MEMORY_NOMAD_KEY }, // Key is already trimmed by setter
+                    // No custom headers to ensure Simple Request (no Preflight)
                     mode: 'cors',
                     credentials: 'omit'
                 });
