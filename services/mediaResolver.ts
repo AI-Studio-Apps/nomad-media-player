@@ -113,26 +113,26 @@ export const mediaResolver = {
             if (pathParts.includes('channels') && pathParts.length >= 3) {
                  const lastPart = pathParts[pathParts.length - 1];
                  if (!isNaN(Number(lastPart))) {
-                     return { platform: 'vimeo', sourceId: lastPart, type: 'video' };
+                     return { platform: 'vimeo', sourceId: lastPart.trim(), type: 'video' };
                  }
             }
 
             // Case 2: Standard Video -> vimeo.com/123456
             const potentialId = pathParts[pathParts.length - 1];
             if (!isNaN(Number(potentialId))) {
-                return { platform: 'vimeo', sourceId: potentialId, type: 'video' };
+                return { platform: 'vimeo', sourceId: potentialId.trim(), type: 'video' };
             }
 
             // Case 3: Channel Collection -> vimeo.com/channels/staffpicks
             // We must explicitly store "channels/" prefix so the service knows to use the channels RSS endpoint
             if (pathParts[0] === 'channels' && pathParts.length >= 2) {
-                return { platform: 'vimeo', sourceId: `channels/${pathParts[1]}`, type: 'channel' };
+                return { platform: 'vimeo', sourceId: `channels/${pathParts[1].trim()}`, type: 'channel' };
             }
 
             // Case 4: User/Profile -> vimeo.com/username
             // If it's not a video ID and not 'channels', assume User
             if (pathParts.length > 0) {
-                return { platform: 'vimeo', sourceId: pathParts[0], type: 'channel' };
+                return { platform: 'vimeo', sourceId: pathParts[0].trim(), type: 'channel' };
             }
         }
 
@@ -141,19 +141,19 @@ export const mediaResolver = {
             
             // 1. Video Short URL: dai.ly/x12345
             if (hostname.includes('dai.ly')) {
-                return { platform: 'dailymotion', sourceId: path.slice(1), type: 'video' };
+                return { platform: 'dailymotion', sourceId: path.slice(1).trim(), type: 'video' };
             }
 
             // 2. Standard Video: /video/x12345
             if (path.includes('/video/')) {
                  const id = path.split('/video/')[1].split('_')[0]; // remove slug if present
-                 return { platform: 'dailymotion', sourceId: id, type: 'video' };
+                 return { platform: 'dailymotion', sourceId: id.trim(), type: 'video' };
             }
 
             // 3. Playlist: /playlist/x6d14t
             if (path.includes('/playlist/')) {
                 const id = path.split('/playlist/')[1].split('_')[0];
-                return { platform: 'dailymotion', sourceId: id, type: 'playlist' };
+                return { platform: 'dailymotion', sourceId: id.trim(), type: 'playlist' };
             }
             
             // 4. Channel (User): /euronews-fr (Root path) or /user/euronews-fr
@@ -161,7 +161,7 @@ export const mediaResolver = {
             if (parts.length > 0) {
                 // Handle legacy /user/username or modern /username
                 const id = parts[0] === 'user' && parts.length > 1 ? parts[1] : parts[0];
-                return { platform: 'dailymotion', sourceId: id, type: 'channel' };
+                return { platform: 'dailymotion', sourceId: id.trim(), type: 'channel' };
             }
         }
 
@@ -173,15 +173,16 @@ export const mediaResolver = {
             else if (hostname.includes('youtu.be')) id = path.slice(1);
             else if (path.startsWith('/shorts/')) id = path.split('/shorts/')[1];
             
-            if (id) return { platform: 'youtube', sourceId: id, type: 'video' };
+            if (id) return { platform: 'youtube', sourceId: id.trim(), type: 'video' };
             
             if (url.searchParams.has('list')) {
-                return { platform: 'youtube', sourceId: url.searchParams.get('list') || '', type: 'playlist' };
+                const listId = url.searchParams.get('list') || '';
+                return { platform: 'youtube', sourceId: listId.trim(), type: 'playlist' };
             }
 
             if (path.startsWith('/channel/') || path.startsWith('/c/') || path.startsWith('/@')) {
                 const segments = path.split('/').filter(p => p);
-                return { platform: 'youtube', sourceId: segments[segments.length - 1], type: 'channel' };
+                return { platform: 'youtube', sourceId: segments[segments.length - 1].trim(), type: 'channel' };
             }
         }
 

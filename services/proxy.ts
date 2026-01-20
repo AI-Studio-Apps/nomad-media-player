@@ -18,11 +18,11 @@ let statusCallback: ((status: ProxyStatus) => void) | null = null;
 export const proxyService = {
     
     setNomadKey(key: string) {
-        MEMORY_NOMAD_KEY = key;
+        MEMORY_NOMAD_KEY = key ? key.trim() : null;
     },
 
     setNomadUrl(url: string) {
-        MEMORY_NOMAD_URL = url;
+        MEMORY_NOMAD_URL = url ? url.trim() : null;
     },
 
     onProxyStatusChange(callback: (status: ProxyStatus) => void) {
@@ -36,13 +36,19 @@ export const proxyService = {
      */
     async testConnection(url: string, key: string): Promise<void> {
         try {
-            const baseUrl = url.endsWith('/') ? url : `${url}/`;
+            const cleanUrl = url ? url.trim() : '';
+            if (!cleanUrl) throw new Error("Worker URL is empty");
+            
+            const cleanKey = key ? key.trim() : '';
+            const baseUrl = cleanUrl.endsWith('/') ? cleanUrl : `${cleanUrl}/`;
+            
             // Test fetching Google favicon or a small text file
+            // Note: We trim the target too, just in case.
             const testTarget = 'https://www.google.com/robots.txt'; 
             const fetchUrl = `${baseUrl}?url=${encodeURIComponent(testTarget)}`;
             
             const res = await fetch(fetchUrl, {
-                headers: { 'X-Proxy-Key': key }
+                headers: { 'X-Proxy-Key': cleanKey }
             });
 
             if (res.status === 403 || res.status === 401) {
@@ -73,16 +79,24 @@ export const proxyService = {
      */
     async fetchText(targetUrl: string): Promise<string> {
         const settings = await dbService.getSettings();
+        const cleanTarget = targetUrl.trim();
         
         // 1. Priority: Nomad Proxy (Authenticated)
         if (MEMORY_NOMAD_KEY) {
             try {
-                const workerUrl = MEMORY_NOMAD_URL || settings?.nomadUrl || DEFAULT_NOMAD_URL;
+                // Ensure no spaces in worker URL
+                // Check if MEMORY_NOMAD_URL is set, else check settings, else default.
+                // Handle empty string in settings:
+                const settingUrl = (settings?.nomadUrl && settings.nomadUrl.trim() !== '') ? settings.nomadUrl : null;
+                const rawWorkerUrl = MEMORY_NOMAD_URL || settingUrl || DEFAULT_NOMAD_URL;
+                
+                const workerUrl = rawWorkerUrl.trim();
                 const baseUrl = workerUrl.endsWith('/') ? workerUrl : `${workerUrl}/`;
-                const fetchUrl = `${baseUrl}?url=${encodeURIComponent(targetUrl)}`;
+                
+                const fetchUrl = `${baseUrl}?url=${encodeURIComponent(cleanTarget)}`;
                 
                 const res = await fetch(fetchUrl, {
-                    headers: { 'X-Proxy-Key': MEMORY_NOMAD_KEY }
+                    headers: { 'X-Proxy-Key': MEMORY_NOMAD_KEY } // Key is already trimmed by setter
                 });
 
                 if (!res.ok) {
@@ -105,19 +119,18 @@ export const proxyService = {
 
         // 2. Priority: Custom Homelab Proxy
         if (settings?.customProxyUrl && settings.customProxyUrl.trim() !== '') {
-            proxies.push(settings.customProxyUrl);
+            proxies.push(settings.customProxyUrl.trim());
         }
 
         // 3. Priority: Public Proxies (Visitor Mode)
-        // If we reach here, we are relying on unreliable public infra.
         if (settings?.proxy1Url && settings.proxy1Url.trim() !== '') {
-            proxies.push(settings.proxy1Url);
+            proxies.push(settings.proxy1Url.trim());
         } else {
             proxies.push(DEFAULT_PROXY_1);
         }
 
         if (settings?.proxy2Url && settings.proxy2Url.trim() !== '') {
-            proxies.push(settings.proxy2Url);
+            proxies.push(settings.proxy2Url.trim());
         } else {
             proxies.push(DEFAULT_PROXY_2);
         }
@@ -127,14 +140,15 @@ export const proxyService = {
 
         for (const proxyBase of proxies) {
             try {
-                const isPublic = proxyBase.includes('allorigins') || proxyBase.includes('corsproxy');
+                const cleanProxyBase = proxyBase.trim();
+                const isPublic = cleanProxyBase.includes('allorigins') || cleanProxyBase.includes('corsproxy');
                 if (isPublic) usedPublic = true;
 
-                const fetchUrl = `${proxyBase}${encodeURIComponent(targetUrl)}`;
+                const fetchUrl = `${cleanProxyBase}${encodeURIComponent(cleanTarget)}`;
                 const res = await fetch(fetchUrl);
                 
                 if (!res.ok) {
-                    throw new Error(`Proxy ${proxyBase} returned ${res.status}`);
+                    throw new Error(`Proxy ${cleanProxyBase} returned ${res.status}`);
                 }
                 
                 const text = await res.text();

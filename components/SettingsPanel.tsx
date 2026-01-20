@@ -69,11 +69,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ sessionKey }) => {
       // Decrypt Nomad Key
       if (settings?.nomadProxyKey) setNomadKey(await cryptoService.decryptData(settings.nomadProxyKey, sessionKey));
       
-      // Load URLs
-      setNomadUrl(settings?.nomadUrl || DEFAULT_NOMAD_URL);
-      setCustomProxy(settings?.customProxyUrl || '');
-      setProxy1(settings?.proxy1Url || DEFAULT_PROXY_1);
-      setProxy2(settings?.proxy2Url || DEFAULT_PROXY_2);
+      // Load URLs (Sanitize by trimming to prevent invisible space errors)
+      setNomadUrl((settings?.nomadUrl || DEFAULT_NOMAD_URL).trim());
+      setCustomProxy((settings?.customProxyUrl || '').trim());
+      setProxy1((settings?.proxy1Url || DEFAULT_PROXY_1).trim());
+      setProxy2((settings?.proxy2Url || DEFAULT_PROXY_2).trim());
 
       // Load Cache
       if (settings?.feedCacheDuration) {
