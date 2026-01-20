@@ -45,19 +45,16 @@ export const proxyService = {
             // Test fetching a highly-available, neutral target.
             const testTarget = 'https://captive.apple.com/hotspot-detect.html'; 
             
-            // We pass the key as a Query Parameter ("&key=") instead of a Header ("X-Proxy-Key").
-            // Custom Headers OR non-safelisted headers (like Cache-Control) trigger a CORS Preflight (OPTIONS).
-            // We must ensure this is a "Simple Request" to avoid OPTIONS issues with the Worker.
+            // CONSTRUCT QUERY PARAMS (The "Simplest" Strategy)
             const fetchUrl = `${baseUrl}?url=${encodeURIComponent(testTarget)}&key=${encodeURIComponent(cleanKey)}`;
             
             // Mask the key in logs for security best practices
             const logUrl = `${baseUrl}?url=${encodeURIComponent(testTarget)}&key=***`;
             console.log(`[Proxy Test] Fetching: ${logUrl}`);
 
+            // MINIMAL FETCH CALL - NO custom headers, NO cache, NO mode options.
             const res = await fetch(fetchUrl, {
-                method: 'GET',
-                mode: 'cors', // Explicitly request CORS
-                credentials: 'omit', // Do not send cookies. Essential for Simple Request if user has cookies for domain.
+                method: 'GET'
             });
 
             if (res.status === 403 || res.status === 401) {
@@ -80,9 +77,9 @@ export const proxyService = {
 
         } catch (e: any) {
             console.error("Test connection failed", e);
-            // Distinguish CORS/Network errors (often caused by 500s on Preflight)
+            
             if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
-                 throw new Error("CORS/Network Error. Check Worker 'Allowed Origins' or Key.");
+                 throw new Error("CORS/Network Error. Ensure your Worker handles OPTIONS requests (Step 1).");
             }
             throw e;
         }
@@ -104,13 +101,11 @@ export const proxyService = {
                 const workerUrl = rawWorkerUrl.trim();
                 const baseUrl = workerUrl.endsWith('/') ? workerUrl : `${workerUrl}/`;
                 
-                // Pass key as Query Param to avoid CORS Preflight
                 const fetchUrl = `${baseUrl}?url=${encodeURIComponent(cleanTarget)}&key=${encodeURIComponent(MEMORY_NOMAD_KEY)}`;
                 
+                // MINIMAL FETCH CALL
                 const res = await fetch(fetchUrl, {
-                    // No custom headers to ensure Simple Request (no Preflight)
-                    mode: 'cors',
-                    credentials: 'omit'
+                    method: 'GET'
                 });
 
                 if (!res.ok) {
@@ -159,7 +154,11 @@ export const proxyService = {
                 if (isPublic) usedPublic = true;
 
                 const fetchUrl = `${cleanProxyBase}${encodeURIComponent(cleanTarget)}`;
-                const res = await fetch(fetchUrl);
+                
+                // MINIMAL FETCH CALL
+                const res = await fetch(fetchUrl, {
+                    method: 'GET'
+                });
                 
                 if (!res.ok) {
                     throw new Error(`Proxy ${cleanProxyBase} returned ${res.status}`);
