@@ -22,14 +22,24 @@ export interface DashboardCache {
 
 export interface AppSettings {
   id?: string; // 'config'
-  apiKey?: EncryptedData; // YouTube API Key
   
-  // Proxy Configuration
-  customProxyUrl?: string; // Priority 1 (Custom/Homelab)
-  proxy1Url?: string;      // Priority 2 (Default: AllOrigins)
-  proxy2Url?: string;      // Priority 3 (Fallback: CORSProxy)
+  // Platform Credentials
+  apiKey?: EncryptedData; // YouTube API Key
+  vimeoToken?: EncryptedData; // Vimeo Access Token
+  dailymotionToken?: EncryptedData; // Dailymotion Bearer Token
 
+  // Nomad Infrastructure
+  nomadProxyKey?: EncryptedData; // Nomad Cloudflare Worker Key
+  nomadUrl?: string; // Custom Worker URL override
+  
+  // Public/Custom Proxy Configuration
+  customProxyUrl?: string; // Priority 2 (Custom/Homelab)
+  proxy1Url?: string;      // Priority 3 (Default: AllOrigins)
+  proxy2Url?: string;      // Priority 4 (Fallback: CORSProxy)
+
+  // Cache Strategy
   dashboardCache?: DashboardCache;
+  feedCacheDuration?: number; // Milliseconds to keep channel/playlist data
 }
 
 export type Platform = 'youtube' | 'vimeo' | 'dailymotion';
@@ -44,6 +54,10 @@ export interface MediaItem {
   tags?: string[];
   uploadsPlaylistId?: string; // Cache for Channel's "Uploads" playlist
   createdAt: number;
+  
+  // Content Caching
+  cachedContent?: VideoItem[];
+  lastFetched?: number;
 }
 
 export interface VideoItem {

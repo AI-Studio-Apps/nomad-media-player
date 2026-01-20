@@ -3,6 +3,7 @@ import { MediaItem, VideoItem, Platform } from '../types';
 import { youtubeService } from './youtube';
 import { vimeoService } from './vimeo';
 import { dailymotionService } from './dailymotion';
+import { dbService } from './db';
 
 interface DetectedSource {
     platform: Platform;
@@ -10,23 +11,61 @@ interface DetectedSource {
     type: 'channel' | 'playlist' | 'video';
 }
 
+const DEFAULT_CACHE_DURATION = 8 * 60 * 60 * 1000; // 8 Hours Default
+
 export const mediaResolver = {
     
     /**
      * Delegates the fetch request to the appropriate service plugin.
+     * Implements intelligent caching to reduce API/Proxy hits.
      */
-    async getVideos(item: MediaItem): Promise<VideoItem[]> {
+    async getVideos(item: MediaItem, forceRefresh = false): Promise<VideoItem[]> {
+        
+        // 1. Check Cache (skip for single videos usually, but keeping logic uniform is fine)
+        if (!forceRefresh && item.cachedContent && item.lastFetched) {
+            const settings = await dbService.getSettings();
+            const cacheDuration = settings?.feedCacheDuration || DEFAULT_CACHE_DURATION;
+            const now = Date.now();
+            
+            if (now - item.lastFetched < cacheDuration) {
+                console.log(`[Cache Hit] Serving ${item.name} from IndexedDB`);
+                return item.cachedContent;
+            }
+        }
+
+        // 2. Network Fetch
+        console.log(`[Network Fetch] retrieving ${item.name}`);
         const platform = item.platform || 'youtube'; // Default for legacy data
+        let videos: VideoItem[] = [];
 
         switch (platform) {
             case 'vimeo':
-                return vimeoService.getVideos(item);
+                videos = await vimeoService.getVideos(item);
+                break;
             case 'dailymotion':
-                return dailymotionService.getVideos(item);
+                videos = await dailymotionService.getVideos(item);
+                break;
             case 'youtube':
             default:
-                return youtubeService.getVideos(item);
+                videos = await youtubeService.getVideos(item);
+                break;
         }
+
+        // 3. Update Cache (Only for Channels and Playlists)
+        if (videos.length > 0 && (item.type === 'channel' || item.type === 'playlist')) {
+            const storeName = item.type === 'channel' ? 'channels' : 'playlists';
+            // Create updated item object
+            const updatedItem: MediaItem = {
+                ...item,
+                cachedContent: videos,
+                lastFetched: Date.now()
+            };
+            
+            // Fire and forget update to not block UI
+            dbService.update(storeName, updatedItem).catch(e => console.warn("Failed to cache feed", e));
+        }
+
+        return videos;
     },
 
     /**

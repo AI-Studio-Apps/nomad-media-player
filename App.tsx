@@ -2,11 +2,14 @@
 import React, { useEffect, useState } from 'react';
 import { 
   Menu, Plus, Settings, Folder, List, Star, 
-  ChevronRight, ChevronDown, Trash2, LogOut, Info, Edit2, Youtube, Shield, Search, Tag as TagIcon, X, ExternalLink, Bookmark, CheckSquare, Play
+  ChevronRight, ChevronDown, Trash2, LogOut, Info, Edit2, Youtube, Shield, Search, Tag as TagIcon, X, ExternalLink, Bookmark, CheckSquare, Play, AlertTriangle
 } from 'lucide-react';
 import { dbService } from './services/db';
 import { cryptoService } from './services/crypto';
 import { youtubeService } from './services/youtube';
+import { vimeoService } from './services/vimeo';
+import { dailymotionService } from './services/dailymotion';
+import { proxyService } from './services/proxy';
 import { mediaResolver } from './services/mediaResolver';
 import { MediaItem, ViewState, Tag, VideoItem } from './types';
 import { Button } from './components/Button';
@@ -47,6 +50,9 @@ function App() {
     watchLater: true
   });
   
+  // Notification State
+  const [visitorMode, setVisitorMode] = useState(false);
+  
   // Search State
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -75,6 +81,11 @@ function App() {
       }
     };
     init();
+
+    // Register Listener for Proxy Fallback
+    proxyService.onVisitorMode(() => {
+        setVisitorMode(true);
+    });
   }, []);
 
   // Clock Timer
@@ -87,21 +98,53 @@ function App() {
   useEffect(() => {
     if (isAuthenticated && sessionKey) {
       loadData();
-      initializeYoutubeService();
+      initializeSecureServices();
     }
   }, [isAuthenticated, sessionKey]);
 
-  const initializeYoutubeService = async () => {
+  const initializeSecureServices = async () => {
       if (!sessionKey) return;
       try {
           const settings = await dbService.getSettings();
-          if (settings && settings.apiKey) {
-              const decryptedKey = await cryptoService.decryptData(settings.apiKey, sessionKey);
-              youtubeService.setApiKey(decryptedKey);
+          if (settings) {
+              
+              // 1. Initialize Nomad Proxy
+              if (settings.nomadProxyKey) {
+                  try {
+                      const decryptedProxyKey = await cryptoService.decryptData(settings.nomadProxyKey, sessionKey);
+                      proxyService.setNomadKey(decryptedProxyKey);
+                  } catch (e) { console.warn("Could not decrypt Nomad Proxy Key"); }
+              }
+              if (settings.nomadUrl) {
+                  proxyService.setNomadUrl(settings.nomadUrl);
+              }
+
+              // 2. Initialize YouTube
+              if (settings.apiKey) {
+                  try {
+                      const decryptedKey = await cryptoService.decryptData(settings.apiKey, sessionKey);
+                      youtubeService.setApiKey(decryptedKey);
+                  } catch (e) { console.warn("Could not decrypt YouTube API Key"); }
+              }
+
+              // 3. Initialize Vimeo
+              if (settings.vimeoToken) {
+                  try {
+                      const decryptedVimeo = await cryptoService.decryptData(settings.vimeoToken, sessionKey);
+                      vimeoService.setToken(decryptedVimeo);
+                  } catch (e) { console.warn("Could not decrypt Vimeo Token"); }
+              }
+
+              // 4. Initialize Dailymotion
+              if (settings.dailymotionToken) {
+                  try {
+                      const decryptedDaily = await cryptoService.decryptData(settings.dailymotionToken, sessionKey);
+                      dailymotionService.setToken(decryptedDaily);
+                  } catch (e) { console.warn("Could not decrypt Dailymotion Token"); }
+              }
           }
       } catch (e) {
-          console.error("Failed to decrypt API Key", e);
-          // Don't alert here, just means video fetch will fail until they set key again
+          console.error("Failed to initialize secure services", e);
       }
   };
 
@@ -290,7 +333,10 @@ function App() {
     setUsername('');
     setPassword('');
     setSessionKey(null);
-    youtubeService.setApiKey(''); // Clear API key from memory
+    youtubeService.setApiKey('');
+    vimeoService.setToken('');
+    dailymotionService.setToken('');
+    proxyService.setNomadKey('');
     setActiveView({ type: 'dashboard' });
   };
 
@@ -392,9 +438,6 @@ function App() {
     // Strict Highlight Logic: Match ID AND Section
     const isActive = (activeView as any).item?.id === item.id && (activeView as any).section === section;
     const isWatchLater = section === 'watch_later';
-    
-    // For delete handler, map section back to store type key if needed, or just pass context
-    // 'watch_later' maps to store 'watchLater' via the handleDelete logic map
     
     return (
         <div 
@@ -597,6 +640,19 @@ function App() {
           </div>
         </header>
 
+        {/* Visitor Mode Warning Banner */}
+        {visitorMode && (
+             <div className="bg-yellow-900/30 border-b border-yellow-900/50 px-4 py-2 flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sm text-yellow-200">
+                    <AlertTriangle size={16} />
+                    <span>Visitor Mode: Using public proxies. Performance may be degraded. Add API Keys in Settings for full experience.</span>
+                </div>
+                <button onClick={() => setVisitorMode(false)} className="text-yellow-200/50 hover:text-yellow-200">
+                    <X size={16} />
+                </button>
+             </div>
+        )}
+
         <div className="flex-1 overflow-hidden relative overflow-y-auto">
           {activeView.type === 'dashboard' && (
             <div className="p-8 max-w-5xl mx-auto pb-20">
@@ -694,7 +750,8 @@ function App() {
               </div>
             </div>
           )}
-
+          
+          {/* ... Rest of components (Search, Tag, FeedViewer, About, Settings) ... */}
           {activeView.type === 'search' && (
              <div className="p-8 max-w-6xl mx-auto overflow-y-auto h-full pb-20">
                 <h1 className="text-2xl font-bold text-white mb-6">Search Results for "{activeView.query}"</h1>
@@ -713,8 +770,7 @@ function App() {
                             {getFilteredItems(activeView.query, channels).length === 0 && <p className="text-zinc-500 text-sm italic">No matching sources.</p>}
                         </div>
                     </section>
-
-                    {/* Playlists */}
+                    {/* ... Playlists & Favorites ... */}
                     <section>
                         <h2 className="text-lg font-semibold text-purple-400 mb-3 flex items-center gap-2"><List size={18} /> Study Paths</h2>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -727,8 +783,6 @@ function App() {
                             {getFilteredItems(activeView.query, playlists).length === 0 && <p className="text-zinc-500 text-sm italic">No matching paths.</p>}
                         </div>
                     </section>
-
-                     {/* Favorites */}
                      <section>
                         <h2 className="text-lg font-semibold text-yellow-400 mb-3 flex items-center gap-2"><Star size={18} /> References</h2>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -746,16 +800,16 @@ function App() {
                 </div>
              </div>
           )}
-
+          
+          {/* ... Tag View ... */}
           {activeView.type === 'tag' && (
              <div className="p-8 max-w-6xl mx-auto overflow-y-auto h-full pb-20">
                 <div className="flex items-center gap-3 mb-6">
                     <TagIcon size={24} className="text-primary" />
                     <h1 className="text-2xl font-bold text-white">Topic: <span className="text-primary">{activeView.tag}</span></h1>
                 </div>
-                
                 <div className="space-y-8">
-                    {/* Channels */}
+                     {/* Reuse similar grid structure as search for Tags ... */}
                     <section>
                         <h2 className="text-lg font-semibold text-green-400 mb-3 flex items-center gap-2"><Youtube size={18} /> Sources</h2>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -767,12 +821,10 @@ function App() {
                                     </div>
                                 </div>
                             ))}
-                            {getTaggedItems(activeView.tag, channels).length === 0 && <p className="text-zinc-500 text-sm italic">No matching sources.</p>}
                         </div>
                     </section>
-
-                    {/* Playlists */}
-                    <section>
+                     {/* ... etc ... */}
+                     <section>
                         <h2 className="text-lg font-semibold text-purple-400 mb-3 flex items-center gap-2"><List size={18} /> Study Paths</h2>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {getTaggedItems(activeView.tag, playlists).map(item => (
@@ -783,11 +835,8 @@ function App() {
                                     </div>
                                 </div>
                             ))}
-                            {getTaggedItems(activeView.tag, playlists).length === 0 && <p className="text-zinc-500 text-sm italic">No matching paths.</p>}
                         </div>
                     </section>
-
-                     {/* Favorites */}
                      <section>
                         <h2 className="text-lg font-semibold text-yellow-400 mb-3 flex items-center gap-2"><Star size={18} /> References</h2>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -799,7 +848,6 @@ function App() {
                                     </div>
                                 </div>
                             ))}
-                             {getTaggedItems(activeView.tag, favorites).length === 0 && <p className="text-zinc-500 text-sm italic">No matching references.</p>}
                         </div>
                     </section>
                 </div>
@@ -811,7 +859,7 @@ function App() {
           )}
 
           {activeView.type === 'settings' && sessionKey && <SettingsPanel sessionKey={sessionKey} />}
-
+          
           {activeView.type === 'about' && (
               <div className="p-8 max-w-3xl mx-auto">
                   <h1 className="text-3xl font-bold text-white mb-6">Nomad Media Player</h1>

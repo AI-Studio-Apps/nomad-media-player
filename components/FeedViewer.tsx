@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { ExternalLink, Play, Clock, User, X, Bookmark, Check } from 'lucide-react';
+import { ExternalLink, Play, Clock, User, X, Bookmark, Check, RotateCcw } from 'lucide-react';
 import { MediaItem, VideoItem } from '../types';
 import { mediaResolver } from '../services/mediaResolver';
 
@@ -15,27 +15,33 @@ export const FeedViewer: React.FC<FeedViewerProps> = ({ item, onBookmark }) => {
   const [error, setError] = useState<string | null>(null);
   const [activeVideo, setActiveVideo] = useState<VideoItem | null>(null);
   const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
+  const [lastFetchedTime, setLastFetchedTime] = useState<number | null>(null);
 
   useEffect(() => {
     setActiveVideo(null);
     setItems([]);
+    setLastFetchedTime(item.lastFetched || null);
     
-    const loadContent = async () => {
+    // Initial load (uses cache if available)
+    loadContent(false);
+  }, [item]);
+
+  const loadContent = async (forceRefresh: boolean) => {
       setLoading(true);
       setError(null);
       try {
-        const videoItems = await mediaResolver.getVideos(item);
+        const videoItems = await mediaResolver.getVideos(item, forceRefresh);
         setItems(videoItems);
+        if (forceRefresh) {
+            setLastFetchedTime(Date.now());
+        }
       } catch (e: any) {
         console.error(e);
         setError(e.message || 'Failed to load content.');
       } finally {
         setLoading(false);
       }
-    };
-
-    loadContent();
-  }, [item]);
+  };
 
   const handleBookmark = (e: React.MouseEvent, vid: VideoItem) => {
       e.stopPropagation();
@@ -108,15 +114,32 @@ export const FeedViewer: React.FC<FeedViewerProps> = ({ item, onBookmark }) => {
   return (
     <div className="w-full h-full overflow-y-auto p-6 relative">
       <div className="flex items-center justify-between mb-8">
-        <h1 className="text-3xl font-bold text-white tracking-tight">{item.name}</h1>
-        <div className="flex gap-2">
-            <span className="capitalize px-2 py-1 bg-zinc-800 text-zinc-400 text-xs rounded border border-zinc-700">{item.platform || 'youtube'}</span>
-            {item.type === 'channel' && <span className="px-2 py-1 bg-green-900/50 text-green-400 text-xs rounded border border-green-900">Source</span>}
-            {item.type === 'playlist' && <span className="px-2 py-1 bg-purple-900/50 text-purple-400 text-xs rounded border border-purple-900">Path</span>}
+        <div>
+            <h1 className="text-3xl font-bold text-white tracking-tight mb-2">{item.name}</h1>
+            <div className="flex gap-2 items-center">
+                <span className="capitalize px-2 py-1 bg-zinc-800 text-zinc-400 text-xs rounded border border-zinc-700">{item.platform || 'youtube'}</span>
+                {item.type === 'channel' && <span className="px-2 py-1 bg-green-900/50 text-green-400 text-xs rounded border border-green-900">Source</span>}
+                {item.type === 'playlist' && <span className="px-2 py-1 bg-purple-900/50 text-purple-400 text-xs rounded border border-purple-900">Path</span>}
+                {lastFetchedTime && (
+                    <span className="text-xs text-zinc-500 ml-2">
+                        Cached: {new Date(lastFetchedTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                    </span>
+                )}
+            </div>
         </div>
+        
+        <button 
+            onClick={() => loadContent(true)}
+            className="flex items-center gap-2 px-3 py-2 bg-surface hover:bg-zinc-700 border border-zinc-700 rounded-lg text-sm transition-colors text-zinc-300 hover:text-white"
+            title="Force Refresh from Network"
+            disabled={loading}
+        >
+            <RotateCcw size={16} className={loading ? "animate-spin" : ""} />
+            <span className="hidden sm:inline">Refresh</span>
+        </button>
       </div>
 
-      {loading && (
+      {loading && items.length === 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[1,2,3,4,5,6].map(i => (
                 <div key={i} className="animate-pulse bg-surface rounded-xl h-64 border border-zinc-700"></div>
@@ -124,7 +147,7 @@ export const FeedViewer: React.FC<FeedViewerProps> = ({ item, onBookmark }) => {
         </div>
       )}
 
-      {error && (
+      {error && items.length === 0 && (
         <div className="flex flex-col items-center justify-center p-12 border border-red-900/50 bg-red-900/10 rounded-xl text-center">
             <div className="text-red-400 mb-2 font-semibold">Error Loading Feed</div>
             <div className="text-red-200 text-sm max-w-md">{error}</div>
@@ -134,8 +157,9 @@ export const FeedViewer: React.FC<FeedViewerProps> = ({ item, onBookmark }) => {
         </div>
       )}
 
-      {!loading && !error && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
+      {/* Render Items (either from cache or network) */}
+      {(items.length > 0) && (
+        <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20 ${loading ? 'opacity-50 pointer-events-none' : ''}`}>
           {items.map((vid) => (
             <div key={vid.id} className="group bg-surface rounded-xl overflow-hidden border border-zinc-700 hover:border-zinc-500 transition-all hover:shadow-xl hover:shadow-blue-900/10 flex flex-col relative">
               

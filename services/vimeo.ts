@@ -4,10 +4,76 @@ import { proxyService } from './proxy';
 
 // Vimeo's oEmbed endpoint is reliable for public data without auth tokens (Single Video)
 const BASE_OEMBED_URL = 'https://vimeo.com/api/oembed.json';
+const BASE_API_URL = 'https://api.vimeo.com';
+
+let MEMORY_TOKEN: string | null = null;
 
 export const vimeoService = {
+    
+    setToken(token: string) {
+        MEMORY_TOKEN = token;
+    },
+
     async getVideos(item: MediaItem): Promise<VideoItem[]> {
         
+        // 1. Authenticated API Strategy (If Token Exists)
+        if (MEMORY_TOKEN) {
+            try {
+                return await this.fetchViaApi(item);
+            } catch (e: any) {
+                console.warn("Vimeo API failed, falling back to Proxy.", e);
+            }
+        }
+
+        // 2. Fallback / Public Strategy
+        return this.fetchFallback(item);
+    },
+
+    async fetchViaApi(item: MediaItem): Promise<VideoItem[]> {
+        let endpoint = '';
+        if (item.type === 'channel') {
+            // Check if it's a real 'channel' or a user path, reusing logic from mediaResolver is hard here, so we try guessing
+            if (item.sourceId.startsWith('channels/')) {
+                endpoint = `/${item.sourceId}/videos`;
+            } else {
+                endpoint = `/users/${item.sourceId}/videos`;
+            }
+        } else if (item.type === 'video') {
+            endpoint = `/videos/${item.sourceId}`;
+        } else {
+            // Playlists on Vimeo usually behave like albums/showcases
+            endpoint = `/me/albums/${item.sourceId}/videos`; 
+        }
+
+        const res = await fetch(`${BASE_API_URL}${endpoint}`, {
+            headers: {
+                'Authorization': `Bearer ${MEMORY_TOKEN}`
+            }
+        });
+
+        if (!res.ok) throw new Error('Vimeo API Error');
+        const data = await res.json();
+
+        if (item.type === 'video') {
+             return [this.mapApiToItem(data)];
+        }
+        return data.data.map((d: any) => this.mapApiToItem(d));
+    },
+
+    mapApiToItem(data: any): VideoItem {
+        return {
+            id: data.uri.split('/').pop(),
+            title: data.name,
+            description: data.description,
+            thumbnail: data.pictures?.sizes?.[2]?.link || '',
+            author: data.user?.name,
+            pubDate: data.created_time,
+            link: data.link,
+            platform: 'vimeo'
+        };
+    },
+
+    async fetchFallback(item: MediaItem): Promise<VideoItem[]> {
         // 1. Handle Single Video (oEmbed)
         if (item.type === 'video') {
             try {
@@ -30,7 +96,6 @@ export const vimeoService = {
                 }];
             } catch (error) {
                 console.error('Vimeo Video Fetch Error:', error);
-                // Fallback for UI if fetch fails
                 return [{
                     id: item.sourceId,
                     title: item.name,
@@ -47,18 +112,13 @@ export const vimeoService = {
         // 2. Handle Channels & Users (RSS Feed via Proxy)
         else {
             try {
-                // Construct RSS URL
-                // Note: Vimeo RSS feeds are typically /channels/{id}/videos/rss or /{user}/videos/rss
                 let rssUrl = '';
                 if (item.sourceId.startsWith('channels/')) {
-                     // If we explicitly detected it as a channel path
                      rssUrl = `https://vimeo.com/${item.sourceId}/videos/rss`;
                 } else {
-                     // Assume User or simple ID
                      rssUrl = `https://vimeo.com/${item.sourceId}/videos/rss`;
                 }
 
-                // Use the Failover Proxy Service
                 const text = await proxyService.fetchText(rssUrl);
                 
                 if (!text.trim().startsWith('<')) {
@@ -116,7 +176,6 @@ export const vimeoService = {
 
             } catch (error) {
                 console.error('Vimeo RSS Fetch Error:', error);
-                // Return empty to allow UI to handle "No Videos" gracefully
                 return [];
             }
         }

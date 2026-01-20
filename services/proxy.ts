@@ -4,33 +4,82 @@ import { dbService } from './db';
 // Public defaults
 export const DEFAULT_PROXY_1 = 'https://api.allorigins.win/raw?url=';
 export const DEFAULT_PROXY_2 = 'https://corsproxy.io/?';
+export const DEFAULT_NOMAD_URL = 'https://nomad.xoopserver.workers.dev/';
+
+// In-memory store for credentials
+let MEMORY_NOMAD_KEY: string | null = null;
+let MEMORY_NOMAD_URL: string | null = null;
+
+// Callback to notify UI of degraded performance
+let visitorModeCallback: (() => void) | null = null;
 
 export const proxyService = {
     
+    setNomadKey(key: string) {
+        MEMORY_NOMAD_KEY = key;
+    },
+
+    setNomadUrl(url: string) {
+        MEMORY_NOMAD_URL = url;
+    },
+
+    onVisitorMode(callback: () => void) {
+        visitorModeCallback = callback;
+    },
+
     /**
      * Fetches text content from a URL using a failover proxy strategy.
      * Order of operations:
-     * 1. Custom Proxy (if defined in settings) - Priority for Homelab
-     * 2. Proxy 1 (Default: AllOrigins)
-     * 3. Proxy 2 (Fallback: CORSProxy)
+     * 1. Nomad Worker (if key is present) - Authenticated
+     * 2. Custom Proxy (if defined in settings) - Homelab
+     * 3. Public Proxies (Visitor Mode) - Triggers UI Warning
      */
     async fetchText(targetUrl: string): Promise<string> {
         const settings = await dbService.getSettings();
+        
+        // 1. Priority: Nomad Proxy (Authenticated)
+        if (MEMORY_NOMAD_KEY) {
+            try {
+                const workerUrl = MEMORY_NOMAD_URL || settings?.nomadUrl || DEFAULT_NOMAD_URL;
+                // Ensure trailing slash for cleanly appending query
+                const baseUrl = workerUrl.endsWith('/') ? workerUrl : `${workerUrl}/`;
+                const fetchUrl = `${baseUrl}?url=${encodeURIComponent(targetUrl)}`;
+                
+                const res = await fetch(fetchUrl, {
+                    headers: { 'X-Proxy-Key': MEMORY_NOMAD_KEY }
+                });
+
+                if (!res.ok) {
+                    throw new Error(`Nomad Proxy returned ${res.status}`);
+                }
+
+                const text = await res.text();
+                if (isValidResponse(text)) return text;
+                
+            } catch (e: any) {
+                console.warn(`Nomad Proxy failed`, e.message);
+                // Fallthrough to next tier
+            }
+        }
+
         const proxies: string[] = [];
 
-        // 1. Add Custom Proxy if exists (Priority)
+        // 2. Priority: Custom Homelab Proxy
         if (settings?.customProxyUrl && settings.customProxyUrl.trim() !== '') {
             proxies.push(settings.customProxyUrl);
         }
 
-        // 2. Add Proxy 1 (User setting OR Default)
+        // 3. Priority: Public Proxies (Visitor Mode)
+        // If we reach here, we are relying on unreliable public infra.
+        // Trigger the UI warning only if we haven't successfully used Nomad/Custom.
+        const isVisitorMode = proxies.length === 0; 
+        
         if (settings?.proxy1Url && settings.proxy1Url.trim() !== '') {
             proxies.push(settings.proxy1Url);
         } else {
             proxies.push(DEFAULT_PROXY_1);
         }
 
-        // 3. Add Proxy 2 (User setting OR Default)
         if (settings?.proxy2Url && settings.proxy2Url.trim() !== '') {
             proxies.push(settings.proxy2Url);
         } else {
@@ -41,6 +90,12 @@ export const proxyService = {
 
         for (const proxyBase of proxies) {
             try {
+                // Determine if this specific proxy attempt is a "Visitor" attempt
+                const isPublicProxy = proxyBase.includes('allorigins') || proxyBase.includes('corsproxy');
+                if (isPublicProxy && visitorModeCallback) {
+                     visitorModeCallback();
+                }
+
                 const fetchUrl = `${proxyBase}${encodeURIComponent(targetUrl)}`;
                 const res = await fetch(fetchUrl);
                 
@@ -50,12 +105,8 @@ export const proxyService = {
                 
                 const text = await res.text();
                 
-                // Simple validation: Ensure we didn't just get a proxy error page
-                if (!text || text.includes('Access Denied') || text.includes('Proxy Error')) {
-                    throw new Error('Invalid response content');
-                }
+                if (isValidResponse(text)) return text;
 
-                return text;
             } catch (e: any) {
                 console.warn(`Proxy failed: ${proxyBase}`, e.message);
                 lastError = e;
@@ -66,3 +117,10 @@ export const proxyService = {
         throw lastError || new Error('All proxies failed to fetch content');
     }
 };
+
+function isValidResponse(text: string): boolean {
+    if (!text || text.includes('Access Denied') || text.includes('Proxy Error') || text.includes('403 Forbidden')) {
+        return false;
+    }
+    return true;
+}

@@ -3,15 +3,28 @@ import { MediaItem, VideoItem } from '../types';
 
 const BASE_URL = 'https://api.dailymotion.com';
 
+let MEMORY_TOKEN: string | null = null;
+
 export const dailymotionService = {
+    
+    setToken(token: string) {
+        MEMORY_TOKEN = token;
+    },
+
     async getVideos(item: MediaItem): Promise<VideoItem[]> {
         
         // Common fields we want to fetch
         const fields = 'id,title,description,thumbnail_720_url,owner.screenname,created_time,url';
+        
+        // Add headers if token exists
+        const headers: HeadersInit = {};
+        if (MEMORY_TOKEN) {
+            headers['Authorization'] = `Bearer ${MEMORY_TOKEN}`;
+        }
 
         try {
             if (item.type === 'video') {
-                const res = await fetch(`${BASE_URL}/video/${item.sourceId}?fields=${fields}`);
+                const res = await fetch(`${BASE_URL}/video/${item.sourceId}?fields=${fields}`, { headers });
                 if (!res.ok) throw new Error('Dailymotion video not found');
                 const data = await res.json();
                 
@@ -27,7 +40,7 @@ export const dailymotionService = {
                 }];
             } else if (item.type === 'channel') {
                 // Fetch videos from a user
-                const res = await fetch(`${BASE_URL}/user/${item.sourceId}/videos?fields=${fields}&limit=20`);
+                const res = await fetch(`${BASE_URL}/user/${item.sourceId}/videos?fields=${fields}&limit=20`, { headers });
                 if (!res.ok) throw new Error('Dailymotion channel not found');
                 const data = await res.json();
                 
@@ -43,7 +56,7 @@ export const dailymotionService = {
                 }));
             } else if (item.type === 'playlist') {
                  // Fetch videos from a playlist
-                 const res = await fetch(`${BASE_URL}/playlist/${item.sourceId}/videos?fields=${fields}&limit=20`);
+                 const res = await fetch(`${BASE_URL}/playlist/${item.sourceId}/videos?fields=${fields}&limit=20`, { headers });
                  if (!res.ok) throw new Error('Dailymotion playlist not found');
                  const data = await res.json();
                  
