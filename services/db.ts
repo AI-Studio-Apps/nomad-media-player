@@ -281,6 +281,18 @@ export class DBService {
     });
   }
 
+  async get<T>(storeName: string, id: number | string): Promise<T | undefined> {
+    return new Promise((resolve, reject) => {
+        if (!this.db) return reject('DB not initialized');
+        const transaction = this.db.transaction([storeName], 'readonly');
+        const store = transaction.objectStore(storeName);
+        const request = store.get(id);
+
+        request.onsuccess = () => resolve(request.result as T);
+        request.onerror = () => reject(request.error);
+    });
+  }
+
   async add<T>(storeName: string, item: T): Promise<any> {
     return new Promise((resolve, reject) => {
       if (!this.db) return reject('DB not initialized');

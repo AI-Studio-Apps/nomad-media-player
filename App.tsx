@@ -2,14 +2,14 @@
 import React, { useEffect, useState } from 'react';
 import { 
   Menu, Plus, Settings, Folder, List, Star, 
-  ChevronRight, ChevronDown, Trash2, LogOut, Info, Edit2, Youtube, Shield, Search, Tag as TagIcon, X, ExternalLink, Bookmark, CheckSquare, Play, AlertTriangle
+  ChevronRight, ChevronDown, Trash2, LogOut, Info, Edit2, Youtube, Shield, Search, Tag as TagIcon, X, ExternalLink, Bookmark, CheckSquare, Play, AlertTriangle, Lock
 } from 'lucide-react';
 import { dbService } from './services/db';
 import { cryptoService } from './services/crypto';
 import { youtubeService } from './services/youtube';
 import { vimeoService } from './services/vimeo';
 import { dailymotionService } from './services/dailymotion';
-import { proxyService } from './services/proxy';
+import { proxyService, ProxyStatus } from './services/proxy';
 import { mediaResolver } from './services/mediaResolver';
 import { MediaItem, ViewState, Tag, VideoItem } from './types';
 import { Button } from './components/Button';
@@ -51,7 +51,7 @@ function App() {
   });
   
   // Notification State
-  const [visitorMode, setVisitorMode] = useState(false);
+  const [proxyStatus, setProxyStatus] = useState<ProxyStatus>('none');
   
   // Search State
   const [searchQuery, setSearchQuery] = useState('');
@@ -82,9 +82,9 @@ function App() {
     };
     init();
 
-    // Register Listener for Proxy Fallback
-    proxyService.onVisitorMode(() => {
-        setVisitorMode(true);
+    // Register Listener for Proxy Status
+    proxyService.onProxyStatusChange((status) => {
+        setProxyStatus(status);
     });
   }, []);
 
@@ -640,16 +640,24 @@ function App() {
           </div>
         </header>
 
-        {/* Visitor Mode Warning Banner */}
-        {visitorMode && (
+        {/* Proxy Status Feedback */}
+        {proxyStatus === 'public' && (
              <div className="bg-yellow-900/30 border-b border-yellow-900/50 px-4 py-2 flex items-center justify-between">
                 <div className="flex items-center gap-2 text-sm text-yellow-200">
                     <AlertTriangle size={16} />
-                    <span>Visitor Mode: Using public proxies. Performance may be degraded. Add API Keys in Settings for full experience.</span>
+                    <span>Visitor Mode: Using public proxies. Performance may be degraded. Add Nomad Key for reliability.</span>
                 </div>
-                <button onClick={() => setVisitorMode(false)} className="text-yellow-200/50 hover:text-yellow-200">
+                <button onClick={() => setProxyStatus('none')} className="text-yellow-200/50 hover:text-yellow-200">
                     <X size={16} />
                 </button>
+             </div>
+        )}
+        {proxyStatus === 'secure' && (
+             <div className="bg-green-900/20 border-b border-green-900/30 px-4 py-1 flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs text-green-400">
+                    <Shield size={12} />
+                    <span>Using Nomad Proxy</span>
+                </div>
              </div>
         )}
 

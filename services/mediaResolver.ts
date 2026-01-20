@@ -21,42 +21,57 @@ export const mediaResolver = {
      */
     async getVideos(item: MediaItem, forceRefresh = false): Promise<VideoItem[]> {
         
-        // 1. Check Cache (skip for single videos usually, but keeping logic uniform is fine)
-        if (!forceRefresh && item.cachedContent && item.lastFetched) {
+        let targetItem = item;
+
+        // 1. FRESHNESS CHECK:
+        // Even if the UI passed a "stale" item (missing cachedContent), the DB might have it.
+        // If the UI state is old, we fetch the latest version from DB first to see if we can skip network.
+        if (!forceRefresh && !targetItem.cachedContent && targetItem.id) {
+             const storeName = targetItem.type === 'channel' ? 'channels' : (targetItem.type === 'playlist' ? 'playlists' : null);
+             if (storeName) {
+                 const freshItem = await dbService.get<MediaItem>(storeName, targetItem.id);
+                 if (freshItem) {
+                     targetItem = freshItem;
+                 }
+             }
+        }
+
+        // 2. Check Cache
+        if (!forceRefresh && targetItem.cachedContent && targetItem.lastFetched) {
             const settings = await dbService.getSettings();
             const cacheDuration = settings?.feedCacheDuration || DEFAULT_CACHE_DURATION;
             const now = Date.now();
             
-            if (now - item.lastFetched < cacheDuration) {
-                console.log(`[Cache Hit] Serving ${item.name} from IndexedDB`);
-                return item.cachedContent;
+            if (now - targetItem.lastFetched < cacheDuration) {
+                console.log(`[Cache Hit] Serving ${targetItem.name} from IndexedDB`);
+                return targetItem.cachedContent;
             }
         }
 
-        // 2. Network Fetch
-        console.log(`[Network Fetch] retrieving ${item.name}`);
-        const platform = item.platform || 'youtube'; // Default for legacy data
+        // 3. Network Fetch
+        console.log(`[Network Fetch] retrieving ${targetItem.name}`);
+        const platform = targetItem.platform || 'youtube'; // Default for legacy data
         let videos: VideoItem[] = [];
 
         switch (platform) {
             case 'vimeo':
-                videos = await vimeoService.getVideos(item);
+                videos = await vimeoService.getVideos(targetItem);
                 break;
             case 'dailymotion':
-                videos = await dailymotionService.getVideos(item);
+                videos = await dailymotionService.getVideos(targetItem);
                 break;
             case 'youtube':
             default:
-                videos = await youtubeService.getVideos(item);
+                videos = await youtubeService.getVideos(targetItem);
                 break;
         }
 
-        // 3. Update Cache (Only for Channels and Playlists)
-        if (videos.length > 0 && (item.type === 'channel' || item.type === 'playlist')) {
-            const storeName = item.type === 'channel' ? 'channels' : 'playlists';
+        // 4. Update Cache (Only for Channels and Playlists)
+        if (videos.length > 0 && (targetItem.type === 'channel' || targetItem.type === 'playlist')) {
+            const storeName = targetItem.type === 'channel' ? 'channels' : 'playlists';
             // Create updated item object
             const updatedItem: MediaItem = {
-                ...item,
+                ...targetItem,
                 cachedContent: videos,
                 lastFetched: Date.now()
             };

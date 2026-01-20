@@ -10,8 +10,10 @@ export const DEFAULT_NOMAD_URL = 'https://nomad.xoopserver.workers.dev/';
 let MEMORY_NOMAD_KEY: string | null = null;
 let MEMORY_NOMAD_URL: string | null = null;
 
-// Callback to notify UI of degraded performance
-let visitorModeCallback: (() => void) | null = null;
+export type ProxyStatus = 'secure' | 'custom' | 'public' | 'none';
+
+// Callback to notify UI of connection status
+let statusCallback: ((status: ProxyStatus) => void) | null = null;
 
 export const proxyService = {
     
@@ -23,16 +25,51 @@ export const proxyService = {
         MEMORY_NOMAD_URL = url;
     },
 
-    onVisitorMode(callback: () => void) {
-        visitorModeCallback = callback;
+    onProxyStatusChange(callback: (status: ProxyStatus) => void) {
+        statusCallback = callback;
+    },
+
+    /**
+     * Used by Settings Panel to verify if key/url combination works.
+     * Tries to fetch a simple stable URL.
+     * Throws specific errors for UI diagnostics.
+     */
+    async testConnection(url: string, key: string): Promise<void> {
+        try {
+            const baseUrl = url.endsWith('/') ? url : `${url}/`;
+            // Test fetching Google favicon or a small text file
+            const testTarget = 'https://www.google.com/robots.txt'; 
+            const fetchUrl = `${baseUrl}?url=${encodeURIComponent(testTarget)}`;
+            
+            const res = await fetch(fetchUrl, {
+                headers: { 'X-Proxy-Key': key }
+            });
+
+            if (res.status === 403 || res.status === 401) {
+                throw new Error("Invalid Key (403)");
+            }
+            if (res.status >= 500) {
+                throw new Error(`Server Error (${res.status})`);
+            }
+            if (!res.ok) {
+                throw new Error(`HTTP Error ${res.status}`);
+            }
+            
+            const text = await res.text();
+            if (!text) throw new Error("Empty Response");
+
+        } catch (e: any) {
+            console.error("Test connection failed", e);
+            // Distinguish CORS/Network errors (often caused by 500s on Preflight)
+            if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
+                 throw new Error("Network/CORS Error (Check Server Logs)");
+            }
+            throw e;
+        }
     },
 
     /**
      * Fetches text content from a URL using a failover proxy strategy.
-     * Order of operations:
-     * 1. Nomad Worker (if key is present) - Authenticated
-     * 2. Custom Proxy (if defined in settings) - Homelab
-     * 3. Public Proxies (Visitor Mode) - Triggers UI Warning
      */
     async fetchText(targetUrl: string): Promise<string> {
         const settings = await dbService.getSettings();
@@ -41,7 +78,6 @@ export const proxyService = {
         if (MEMORY_NOMAD_KEY) {
             try {
                 const workerUrl = MEMORY_NOMAD_URL || settings?.nomadUrl || DEFAULT_NOMAD_URL;
-                // Ensure trailing slash for cleanly appending query
                 const baseUrl = workerUrl.endsWith('/') ? workerUrl : `${workerUrl}/`;
                 const fetchUrl = `${baseUrl}?url=${encodeURIComponent(targetUrl)}`;
                 
@@ -54,7 +90,10 @@ export const proxyService = {
                 }
 
                 const text = await res.text();
-                if (isValidResponse(text)) return text;
+                if (isValidResponse(text)) {
+                    if (statusCallback) statusCallback('secure');
+                    return text;
+                }
                 
             } catch (e: any) {
                 console.warn(`Nomad Proxy failed`, e.message);
@@ -71,9 +110,6 @@ export const proxyService = {
 
         // 3. Priority: Public Proxies (Visitor Mode)
         // If we reach here, we are relying on unreliable public infra.
-        // Trigger the UI warning only if we haven't successfully used Nomad/Custom.
-        const isVisitorMode = proxies.length === 0; 
-        
         if (settings?.proxy1Url && settings.proxy1Url.trim() !== '') {
             proxies.push(settings.proxy1Url);
         } else {
@@ -87,14 +123,12 @@ export const proxyService = {
         }
 
         let lastError: Error | null = null;
+        let usedPublic = false;
 
         for (const proxyBase of proxies) {
             try {
-                // Determine if this specific proxy attempt is a "Visitor" attempt
-                const isPublicProxy = proxyBase.includes('allorigins') || proxyBase.includes('corsproxy');
-                if (isPublicProxy && visitorModeCallback) {
-                     visitorModeCallback();
-                }
+                const isPublic = proxyBase.includes('allorigins') || proxyBase.includes('corsproxy');
+                if (isPublic) usedPublic = true;
 
                 const fetchUrl = `${proxyBase}${encodeURIComponent(targetUrl)}`;
                 const res = await fetch(fetchUrl);
@@ -105,7 +139,14 @@ export const proxyService = {
                 
                 const text = await res.text();
                 
-                if (isValidResponse(text)) return text;
+                if (isValidResponse(text)) {
+                    // Success! Report status.
+                    if (statusCallback) {
+                        if (usedPublic) statusCallback('public');
+                        else statusCallback('custom');
+                    }
+                    return text;
+                }
 
             } catch (e: any) {
                 console.warn(`Proxy failed: ${proxyBase}`, e.message);
@@ -113,7 +154,8 @@ export const proxyService = {
                 // Continue to next proxy in loop
             }
         }
-
+        
+        if (statusCallback) statusCallback('none');
         throw lastError || new Error('All proxies failed to fetch content');
     }
 };

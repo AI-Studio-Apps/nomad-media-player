@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useRef } from 'react';
-import { Save, Key, CheckCircle, AlertCircle, Lock, Database, Download, Upload, Globe, Cloud, Youtube, Video, Clock } from 'lucide-react';
+import { Save, Key, CheckCircle, AlertCircle, Lock, Database, Download, Upload, Globe, Cloud, Youtube, Video, Clock, Loader } from 'lucide-react';
 import { dbService } from '../services/db';
 import { cryptoService } from '../services/crypto';
 import { youtubeService } from '../services/youtube';
@@ -31,6 +31,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ sessionKey }) => {
   // Nomad Proxy
   const [nomadKey, setNomadKey] = useState('');
   const [nomadUrl, setNomadUrl] = useState('');
+  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [testMsg, setTestMsg] = useState('');
 
   // Custom/Public Proxies
   const [customProxy, setCustomProxy] = useState('');
@@ -147,6 +149,24 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ sessionKey }) => {
       } catch (e: any) {
           setProxyStatus('error');
           setProxyMsg('Failed to save settings: ' + e.message);
+      }
+  };
+
+  const handleTestNomad = async () => {
+      if (!nomadKey.trim()) return;
+      setTestStatus('testing');
+      setTestMsg('');
+      const url = nomadUrl.trim() || DEFAULT_NOMAD_URL;
+      
+      try {
+          await proxyService.testConnection(url, nomadKey.trim());
+          setTestStatus('success');
+          // If success, update local memory immediately so other fetches might benefit without saving
+          proxyService.setNomadKey(nomadKey.trim());
+          proxyService.setNomadUrl(url);
+      } catch (e: any) {
+          setTestStatus('error');
+          setTestMsg(e.message || 'Failed');
       }
   };
 
@@ -302,23 +322,53 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ sessionKey }) => {
                         
                         {/* Nomad Proxy */}
                         <div className="p-4 bg-blue-900/10 border border-blue-900/30 rounded-lg space-y-3">
-                            <div className="flex items-center gap-2 text-blue-300 font-semibold text-sm">
-                                <Cloud size={16} /> Nomad Proxy (Private Worker)
+                            <div className="flex items-center justify-between text-blue-300 font-semibold text-sm">
+                                <div className="flex items-center gap-2">
+                                    <Cloud size={16} /> Nomad Proxy (Private Worker)
+                                </div>
+                                {testStatus !== 'idle' && (
+                                    <div className={`flex items-center gap-1 text-xs ${testStatus === 'success' ? 'text-green-400' : testStatus === 'testing' ? 'text-yellow-400' : 'text-red-400'}`}>
+                                        {testStatus === 'success' && <CheckCircle size={14} />}
+                                        {testStatus === 'error' && <AlertCircle size={14} />}
+                                        {testStatus === 'testing' && <Loader size={14} className="animate-spin" />}
+                                        <span>
+                                            {testStatus === 'success' ? 'Connected' : testStatus === 'testing' ? 'Testing...' : (testMsg || 'Failed')}
+                                        </span>
+                                    </div>
+                                )}
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <Input 
                                     value={nomadUrl}
-                                    onChange={e => setNomadUrl(e.target.value)}
+                                    onChange={e => {
+                                        setNomadUrl(e.target.value);
+                                        setTestStatus('idle');
+                                        setTestMsg('');
+                                    }}
                                     placeholder="https://nomad.workers.dev/"
                                     label="Worker URL"
                                 />
-                                <Input 
-                                    type="password"
-                                    value={nomadKey}
-                                    onChange={e => setNomadKey(e.target.value)}
-                                    placeholder="Proxy Key"
-                                    label="Proxy Key"
-                                />
+                                <div className="relative">
+                                    <Input 
+                                        type="password"
+                                        value={nomadKey}
+                                        onChange={e => {
+                                            setNomadKey(e.target.value);
+                                            setTestStatus('idle');
+                                            setTestMsg('');
+                                        }}
+                                        placeholder="Proxy Key"
+                                        label="Proxy Key"
+                                    />
+                                    <button 
+                                        type="button"
+                                        onClick={handleTestNomad}
+                                        disabled={!nomadKey.trim() || testStatus === 'testing'}
+                                        className="absolute right-2 top-8 text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-500 disabled:opacity-50"
+                                    >
+                                        Test
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
