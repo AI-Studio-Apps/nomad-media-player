@@ -16,15 +16,11 @@
 </div>
 
 
-Nomad Media Player stores your favorite public video channels, playlists, and learning guides locally.
-A self-hosted app for digital nomads, built with local-first design and privacy-respecting architecture.   
+Nomad Media Player is a self-hosted app that stores your favorite public video channels, playlists, and learning guides locally. Designed for digital nomads, it prioritizes local-first design and privacy.   
 
 In an era of abundant information, Nomad Media Player is a purpose-built workspace for intentional viewing and research. It allows students and professionals to curate their own educational feeds, separating valuable learning resources from the algorithmic loops of entertainment platforms.
 
 It fosters a proactive approach to media consumption, ensuring your time is spent on content you selected, not content suggested to you.
-
-
-
 
 
 ## Features 
@@ -37,10 +33,12 @@ It fosters a proactive approach to media consumption, ensuring your time is spen
 | Seamless Platform Integration | Connect to popular video platforms using your API keys for a richer experience.                                                              |
 | Custom & Free Proxy | Bypass restrictions with your own proxy server or automatically fallback to free proxies to overcome network restrictions and maintain privacy.                      |
 | AI Gemini Integration       | Utilize your AI Gemini Free Tier API key to get learning guide with chat (Local LLM coming soon!).                                             |
+| Backup Database | Securely export all your settings, channels, playlists, and favorites as a JSON file. Easily import this file to restore your data, ensuring you never lose your configurations. |
 
 
+## Settings
 
-## API and RSS
+### API and RSS
 
 Many video platforms have restricted or removed public RSS feeds to enforce tracking, control embedding, and monetize access. As a result, their content can no longer be fetched directly by browser-based apps due to CORS restrictions.
 
@@ -62,7 +60,7 @@ To fetch your public YouTube videos or channel info, you’ll need a free **YouT
 YouTube Data API v3 allows up to 50 items per request, full metadata, max-resolution thumbnails,   
 and requires no "hacky" CORS proxies.
 
-### How to get it:  
+#### How to get it:  
 
 1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
 2. Create a new project (or use an existing one)
@@ -70,7 +68,7 @@ and requires no "hacky" CORS proxies.
 4. Create an **API key** under "Credentials"
 5. (Recommended) Restrict the key to your app’s domain and the YouTube API
 
-### Save it in the app:   
+#### Save it in the app:   
 
 - Open the web app
 - Go to **Settings → Integrations → YouTube**
@@ -92,7 +90,9 @@ Using the Web Crypto API (window.crypto) ensures that sensitive data (like the A
 2. Session Key: When the user logs in, it derives a CryptoKey from the password + the stored salt. This key exists only in memory (RAM) while the page is open.
 3. Encrypted API Key: The YouTube API Key is encrypted with this Session Key before being stored. Even if someone steals the database file, they cannot use the API Key without the user's password.
 
-## Run Locally
+## Development
+
+### Run Locally
 
 **Prerequisites:**  Node.js
 
@@ -107,14 +107,13 @@ Using the Web Crypto API (window.crypto) ensures that sensitive data (like the A
 > Client-Side Encryption Enabled: Your password and API keys are encrypted in your browser using AES-GCM and PBKDF2. We cannot recover your password if you lose it.
 
 
-## Development
+
+### 🌍 Video platforms
 
 Nomad Media Player design to support multiple video platforms beyond YouTube.   
 The following review outlines current and planned integrations—focusing on services that offer public, client-side–friendly APIs for fetching playlist and video metadata.
 
 All integrations should be implemented **without backend dependencies**, using only browser-based requests to official public APIs.
-
-### 🌍 Video platforms
 
 Most major video platforms offer public REST APIs, but access, cost, and ease of use vary significantly. Below is a clear, practical comparison focused on free-tier availability, authentication needs, and suitability for a client-side app like nomad-media-player (hosted on GitHub Pages).
 
