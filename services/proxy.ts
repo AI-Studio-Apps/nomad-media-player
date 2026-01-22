@@ -48,9 +48,7 @@ export const proxyService = {
             // CONSTRUCT QUERY PARAMS (The "Simplest" Strategy)
             const fetchUrl = `${baseUrl}?url=${encodeURIComponent(testTarget)}&key=${encodeURIComponent(cleanKey)}`;
             
-            // Mask the key in logs for security best practices
-            const logUrl = `${baseUrl}?url=${encodeURIComponent(testTarget)}&key=***`;
-            console.log(`[Proxy Test] Fetching: ${logUrl}`);
+            console.log(`[Proxy Test] Fetching: ${baseUrl}?url=...&key=***`);
 
             // MINIMAL FETCH CALL - NO custom headers, NO cache, NO mode options.
             const res = await fetch(fetchUrl, {
@@ -58,10 +56,18 @@ export const proxyService = {
             });
 
             if (res.status === 403 || res.status === 401) {
-                throw new Error("Invalid Key (403)");
+                // Read the specific error text from the worker to distinguish Origin vs Key errors
+                const errorBody = await res.text();
+                console.error("Worker 403 Response:", errorBody);
+
+                if (errorBody.toLowerCase().includes('origin')) {
+                     throw new Error("Access Denied: Domain not allowed. Update your Worker code to allow this Origin.");
+                }
+                
+                throw new Error("Invalid Key. Ensure 'PROXY_SECRET' is set in Cloudflare Dashboard > Settings > Variables.");
             }
             if (res.status >= 500) {
-                throw new Error(`Server Error (${res.status}) - Worker may be blocked by target`);
+                throw new Error(`Server Error (${res.status}) - Worker may be blocked or crashing.`);
             }
             if (!res.ok) {
                 throw new Error(`HTTP Error ${res.status}`);
@@ -79,7 +85,7 @@ export const proxyService = {
             console.error("Test connection failed", e);
             
             if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
-                 throw new Error("CORS/Network Error. Ensure your Worker handles OPTIONS requests (Step 1).");
+                 throw new Error("Network Error. If you see 'Error 1101', your Worker script crashed (check 'env' usage).");
             }
             throw e;
         }

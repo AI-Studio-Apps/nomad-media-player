@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { Sparkles, Play, RotateCcw, Clock, Bookmark, Check } from 'lucide-react';
+import { Sparkles, Play, RotateCcw, Clock, Bookmark, Check, Brain } from 'lucide-react';
 import { MediaItem, VideoItem } from '../types';
 import { dbService } from '../services/db';
 import { mediaResolver } from '../services/mediaResolver';
@@ -9,11 +9,12 @@ interface RandomDiscoveryProps {
   channels: MediaItem[];
   onVideoClick: (video: VideoItem) => void;
   onBookmark?: (video: VideoItem) => void;
+  onLearn?: (video: VideoItem) => void;
 }
 
 const CACHE_DURATION_MS = 8 * 60 * 60 * 1000; // 8 Hours
 
-export const RandomDiscovery: React.FC<RandomDiscoveryProps> = ({ channels, onVideoClick, onBookmark }) => {
+export const RandomDiscovery: React.FC<RandomDiscoveryProps> = ({ channels, onVideoClick, onBookmark, onLearn }) => {
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
@@ -91,6 +92,11 @@ export const RandomDiscovery: React.FC<RandomDiscoveryProps> = ({ channels, onVi
     }
   };
 
+  const handleLearn = (e: React.MouseEvent, vid: VideoItem) => {
+      e.stopPropagation();
+      if (onLearn) onLearn(vid);
+  };
+
   if (channels.length === 0) return null;
 
   return (
@@ -142,14 +148,25 @@ export const RandomDiscovery: React.FC<RandomDiscoveryProps> = ({ channels, onVi
                 <div className="transform translate-y-2 group-hover:translate-y-0 transition-transform duration-300">
                     <div className="flex items-center justify-between mb-1">
                         <span className="text-[10px] uppercase bg-white/20 px-1.5 rounded text-white backdrop-blur-md">{video.platform}</span>
-                        {onBookmark && (
-                            <button 
-                                onClick={(e) => handleBookmark(e, video)}
-                                className={`p-1.5 rounded-full backdrop-blur-md transition-colors ${bookmarkedIds.has(video.id) ? 'bg-green-500 text-white' : 'bg-white/20 text-white hover:bg-white/40'}`}
-                            >
-                                {bookmarkedIds.has(video.id) ? <Check size={12} /> : <Bookmark size={12} />}
-                            </button>
-                        )}
+                        <div className="flex gap-2">
+                             {onLearn && (
+                                <button 
+                                    onClick={(e) => handleLearn(e, video)}
+                                    className="p-1.5 rounded-full backdrop-blur-md transition-colors bg-yellow-500/80 text-white hover:bg-yellow-500"
+                                    title="Learn"
+                                >
+                                    <Brain size={12} />
+                                </button>
+                             )}
+                            {onBookmark && (
+                                <button 
+                                    onClick={(e) => handleBookmark(e, video)}
+                                    className={`p-1.5 rounded-full backdrop-blur-md transition-colors ${bookmarkedIds.has(video.id) ? 'bg-green-500 text-white' : 'bg-white/20 text-white hover:bg-white/40'}`}
+                                >
+                                    {bookmarkedIds.has(video.id) ? <Check size={12} /> : <Bookmark size={12} />}
+                                </button>
+                            )}
+                        </div>
                     </div>
                     <h3 className="text-white font-semibold line-clamp-2 text-sm mb-1">{video.title}</h3>
                     <p className="text-zinc-400 text-xs flex items-center gap-1">

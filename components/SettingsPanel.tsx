@@ -1,11 +1,12 @@
 
 import React, { useEffect, useState, useRef } from 'react';
-import { Save, Key, CheckCircle, AlertCircle, Lock, Database, Download, Upload, Globe, Cloud, Youtube, Video, Clock, Loader } from 'lucide-react';
+import { Save, Key, CheckCircle, AlertCircle, Lock, Database, Download, Upload, Globe, Cloud, Youtube, Video, Clock, Loader, Brain } from 'lucide-react';
 import { dbService } from '../services/db';
 import { cryptoService } from '../services/crypto';
 import { youtubeService } from '../services/youtube';
 import { vimeoService } from '../services/vimeo';
 import { dailymotionService } from '../services/dailymotion';
+import { geminiService } from '../services/gemini';
 import { proxyService } from '../services/proxy';
 import { DEFAULT_PROXY_1, DEFAULT_PROXY_2, DEFAULT_NOMAD_URL } from '../services/proxy';
 import { Button } from './Button';
@@ -27,6 +28,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ sessionKey }) => {
   const [apiKey, setApiKey] = useState('');
   const [vimeoToken, setVimeoToken] = useState('');
   const [dailymotionToken, setDailymotionToken] = useState('');
+  const [geminiKey, setGeminiKey] = useState('');
 
   // Nomad Proxy
   const [nomadKey, setNomadKey] = useState('');
@@ -65,6 +67,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ sessionKey }) => {
       if (settings?.apiKey) setApiKey(await cryptoService.decryptData(settings.apiKey, sessionKey));
       if (settings?.vimeoToken) setVimeoToken(await cryptoService.decryptData(settings.vimeoToken, sessionKey));
       if (settings?.dailymotionToken) setDailymotionToken(await cryptoService.decryptData(settings.dailymotionToken, sessionKey));
+      if (settings?.geminiApiKey) setGeminiKey(await cryptoService.decryptData(settings.geminiApiKey, sessionKey));
       
       // Decrypt Nomad Key
       if (settings?.nomadProxyKey) setNomadKey(await cryptoService.decryptData(settings.nomadProxyKey, sessionKey));
@@ -100,18 +103,21 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ sessionKey }) => {
         const encApiKey = apiKey.trim() ? await cryptoService.encryptData(apiKey.trim(), sessionKey) : undefined;
         const encVimeo = vimeoToken.trim() ? await cryptoService.encryptData(vimeoToken.trim(), sessionKey) : undefined;
         const encDaily = dailymotionToken.trim() ? await cryptoService.encryptData(dailymotionToken.trim(), sessionKey) : undefined;
+        const encGemini = geminiKey.trim() ? await cryptoService.encryptData(geminiKey.trim(), sessionKey) : undefined;
 
         await dbService.saveSettings({ 
             ...settings,
             apiKey: encApiKey,
             vimeoToken: encVimeo,
-            dailymotionToken: encDaily
+            dailymotionToken: encDaily,
+            geminiApiKey: encGemini
         });
         
         // Update Services immediately
         youtubeService.setApiKey(apiKey.trim());
         vimeoService.setToken(vimeoToken.trim());
         dailymotionService.setToken(dailymotionToken.trim());
+        geminiService.setApiKey(geminiKey.trim());
 
         setCredsStatus('success');
         setCredsMsg('Platform credentials encrypted and saved.');
@@ -287,6 +293,21 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ sessionKey }) => {
                                     value={dailymotionToken}
                                     onChange={e => setDailymotionToken(e.target.value)}
                                     placeholder="Dailymotion bearer token"
+                                    type="password"
+                                />
+                             </div>
+                             <div className="pt-2 border-t border-zinc-700">
+                                <label className="flex items-center gap-2 text-sm font-medium text-zinc-300 mb-1">
+                                    <Brain size={14} className="text-yellow-400" /> Google Gemini API Key
+                                </label>
+                                <div className="flex gap-2 mb-1">
+                                    <p className="text-xs text-zinc-500">Required for the "Learn Mode" features (Summaries, Quiz, Chat).</p>
+                                    <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-xs text-primary hover:underline">Get Key</a>
+                                </div>
+                                <Input 
+                                    value={geminiKey}
+                                    onChange={e => setGeminiKey(e.target.value)}
+                                    placeholder="AIzaSy..."
                                     type="password"
                                 />
                              </div>

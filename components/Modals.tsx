@@ -18,7 +18,7 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="bg-surface border border-zinc-700 w-full max-w-md rounded-lg shadow-xl overflow-hidden">
         <div className="flex items-center justify-between p-4 border-b border-zinc-700">
           <h2 className="text-lg font-semibold text-white">{title}</h2>
@@ -184,6 +184,63 @@ export const RenameTagForm: React.FC<RenameTagFormProps> = ({ oldName, onSave, o
             <div className="pt-2 flex justify-end gap-2">
                 <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
                 <Button type="submit">Rename</Button>
+            </div>
+        </form>
+    );
+};
+
+interface SaveLessonFormProps {
+    defaultTitle: string;
+    onSave: (title: string, description: string, tags: string[]) => void;
+    onClose: () => void;
+    availableTags?: string[];
+    onAddTag?: (tag: string) => void;
+}
+
+export const SaveLessonForm: React.FC<SaveLessonFormProps> = ({ 
+    defaultTitle, onSave, onClose, availableTags = [], onAddTag 
+}) => {
+    const [title, setTitle] = useState(defaultTitle);
+    const [description, setDescription] = useState('');
+    const [selectedTags, setSelectedTags] = useState<string[]>([]);
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if(title.trim()) {
+            onSave(title, description, selectedTags);
+            onClose();
+        }
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="space-y-4">
+             <Input 
+                label="Lesson Title"
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+                required
+                placeholder="E.g. Notes on Quantum Mechanics"
+             />
+             <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-1">Description / Metadata</label>
+                <textarea 
+                    className="w-full h-24 rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-white"
+                    value={description}
+                    onChange={e => setDescription(e.target.value)}
+                    placeholder="Brief summary of what this guide covers..."
+                />
+             </div>
+
+             <TagInput 
+                selectedTags={selectedTags}
+                availableTags={availableTags}
+                onTagsChange={setSelectedTags}
+                onAddTag={onAddTag}
+            />
+
+            <div className="pt-2 flex justify-end gap-2">
+                <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+                <Button type="submit">Save Guide</Button>
             </div>
         </form>
     );

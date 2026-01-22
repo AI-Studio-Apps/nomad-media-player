@@ -1,8 +1,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { 
-  Menu, Plus, Settings, Folder, List, Star, 
-  ChevronRight, ChevronDown, Trash2, LogOut, Info, Edit2, Youtube, Shield, Search, Tag as TagIcon, X, ExternalLink, Bookmark, CheckSquare, Play, AlertTriangle, Lock
+  Menu, Plus, Settings, List, Star, 
+  ChevronRight, ChevronDown, Trash2, LogOut, Info, Edit2, Youtube, Shield, Search, Tag as TagIcon, X, ExternalLink, Bookmark, Play, AlertTriangle, Brain, BookOpen
 } from 'lucide-react';
 import { dbService } from './services/db';
 import { cryptoService } from './services/crypto';
@@ -10,14 +10,16 @@ import { youtubeService } from './services/youtube';
 import { vimeoService } from './services/vimeo';
 import { dailymotionService } from './services/dailymotion';
 import { proxyService, ProxyStatus } from './services/proxy';
+import { geminiService } from './services/gemini';
 import { mediaResolver } from './services/mediaResolver';
-import { MediaItem, ViewState, Tag, VideoItem } from './types';
+import { MediaItem, ViewState, Tag, VideoItem, Lesson } from './types';
 import { Button } from './components/Button';
 import { Input } from './components/Input';
 import { Modal, AddItemForm, RenameTagForm } from './components/Modals';
 import { FeedViewer } from './components/FeedViewer';
 import { SettingsPanel } from './components/SettingsPanel';
 import { RandomDiscovery } from './components/RandomDiscovery';
+import { LearnView } from './components/LearnView';
 
 function App() {
   const [isDbReady, setIsDbReady] = useState(false);
@@ -37,17 +39,19 @@ function App() {
   const [playlists, setPlaylists] = useState<MediaItem[]>([]);
   const [favorites, setFavorites] = useState<MediaItem[]>([]);
   const [watchLater, setWatchLater] = useState<MediaItem[]>([]);
+  const [lessons, setLessons] = useState<Lesson[]>([]);
   const [tags, setTags] = useState<string[]>([]);
 
   // UI State
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeView, setActiveView] = useState<ViewState>({ type: 'dashboard' });
   const [expandedSections, setExpandedSections] = useState({
-    channels: true,
-    playlists: true,
-    favorites: true,
-    tags: true,
-    watchLater: true
+    channels: false,
+    playlists: false,
+    favorites: false,
+    tags: false,
+    watchLater: false,
+    lessons: false
   });
   
   // Notification State
@@ -142,6 +146,14 @@ function App() {
                       dailymotionService.setToken(decryptedDaily);
                   } catch (e) { console.warn("Could not decrypt Dailymotion Token"); }
               }
+
+              // 5. Initialize Gemini
+              if (settings.geminiApiKey) {
+                  try {
+                      const decryptedGemini = await cryptoService.decryptData(settings.geminiApiKey, sessionKey);
+                      geminiService.setApiKey(decryptedGemini);
+                  } catch (e) { console.warn("Could not decrypt Gemini API Key"); }
+              }
           }
       } catch (e) {
           console.error("Failed to initialize secure services", e);
@@ -149,17 +161,19 @@ function App() {
   };
 
   const loadData = async () => {
-    const [chans, plays, favs, wl, tagList] = await Promise.all([
+    const [chans, plays, favs, wl, lssns, tagList] = await Promise.all([
       dbService.getAll<MediaItem>('channels'),
       dbService.getAll<MediaItem>('playlists'),
       dbService.getAll<MediaItem>('favorites'),
       dbService.getAll<MediaItem>('watchLater'),
+      dbService.getAll<Lesson>('lessons'),
       dbService.getAll<Tag>('tags')
     ]);
     setChannels(chans);
     setPlaylists(plays);
     setFavorites(favs);
     setWatchLater(wl);
+    setLessons(lssns);
     setTags(tagList.map(t => t.name));
   };
 
@@ -228,7 +242,6 @@ function App() {
     if (editingItem) {
         const updatedItem = { ...editingItem, ...itemData };
         // Determine store based on original item type, unless it's a "watchLater" UI item which uses 'video' schema but different store
-        // However, editing is disabled for Watch Later in sidebar currently (simplification).
         await dbService.update(storeMap[itemData.type], updatedItem);
         if ((activeView as any).item?.id === editingItem.id) {
             setActiveView({ ...activeView, item: updatedItem } as ViewState);
@@ -258,6 +271,27 @@ function App() {
       
       await dbService.add('watchLater', mediaItem);
       loadData();
+  };
+  
+  const handleLaunchLearn = (video: VideoItem) => {
+      setOverlayVideo(null); // Close overlay if open
+      setActiveView({ type: 'learn', video });
+  };
+
+  const handleOpenLesson = (lesson: Lesson) => {
+    // Reconstruct video item from lesson data to pass to LearnView
+    const video: VideoItem = {
+        id: lesson.videoId,
+        title: lesson.title,
+        link: lesson.videoUrl,
+        // Best effort reconstruction
+        pubDate: new Date(lesson.createdAt).toISOString(), 
+        thumbnail: '', 
+        author: 'Saved Lesson', 
+        description: lesson.description || '',
+        platform: 'youtube' // Default assumption if not stored
+    };
+    setActiveView({ type: 'learn', video, initialLesson: lesson });
   };
 
   const handleRenameTag = async (newName: string) => {
@@ -301,13 +335,14 @@ function App() {
       'channel': 'channels',
       'playlist': 'playlists',
       'video': 'favorites',
-      'watch_later': 'watchLater' // Map UI type 'watch_later' to DB store
+      'watch_later': 'watchLater',
+      'lesson': 'lessons'
     };
 
     await dbService.delete(storeMap[type], id);
     
     // Reset view if we just deleted the active item
-    if ((activeView as any).item?.id === id) {
+    if ((activeView as any).item?.id === id || ((activeView as any).initialLesson?.id === id)) {
         setActiveView({ type: 'dashboard' });
     }
     loadData();
@@ -337,6 +372,7 @@ function App() {
     vimeoService.setToken('');
     dailymotionService.setToken('');
     proxyService.setNomadKey('');
+    geminiService.setApiKey('');
     setActiveView({ type: 'dashboard' });
   };
 
@@ -433,6 +469,20 @@ function App() {
     );
   }
 
+  // Handle Learn View Separately (Full Screen)
+  if (activeView.type === 'learn') {
+      return (
+          <LearnView 
+            video={activeView.video} 
+            initialLesson={activeView.initialLesson}
+            onBack={() => setActiveView({ type: 'dashboard' })}
+            availableTags={tags}
+            onAddTag={handleAddTag}
+            onSaveComplete={loadData}
+          />
+      );
+  }
+
   // Generic Sidebar Item Renderer with Section Awareness
   const renderSidebarItem = (item: MediaItem, icon: React.ReactNode, section: string) => {
     // Strict Highlight Logic: Match ID AND Section
@@ -482,6 +532,43 @@ function App() {
         </div>
 
         <nav className="flex-1 overflow-y-auto p-2 space-y-1">
+          {/* Learning Guides - NEW */}
+          <div>
+            <button onClick={() => toggleSection('lessons')} className="w-full flex items-center justify-between p-2 text-zinc-300 hover:text-white font-medium">
+              <div className="flex items-center gap-2">
+                {expandedSections.lessons ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                <BookOpen size={18} />
+                <span>Learning Guides</span>
+              </div>
+            </button>
+            {expandedSections.lessons && (
+                <div className="space-y-0.5">
+                    {lessons.map(lesson => (
+                         <div 
+                            key={lesson.id}
+                            onClick={() => handleOpenLesson(lesson)}
+                            className={`group flex items-center justify-between p-2 pl-9 rounded-md cursor-pointer text-sm transition-colors ${
+                                ((activeView as any).initialLesson?.id === lesson.id)
+                                ? 'bg-blue-600/20 text-blue-400' 
+                                : 'text-zinc-400 hover:bg-zinc-800 hover:text-white'
+                            }`}
+                        >
+                            <div className="flex items-center gap-2 truncate">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                                <span className="truncate">{lesson.title}</span>
+                            </div>
+                            <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button onClick={(e) => handleDelete(e, 'lesson', lesson.id!)} className="text-zinc-500 hover:text-red-400 p-1">
+                                    <Trash2 size={14} />
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                    {lessons.length === 0 && <div className="pl-9 p-2 text-xs text-zinc-600">No saved guides</div>}
+                </div>
+            )}
+          </div>
+
           {/* Channels */}
           <div>
             <button onClick={() => toggleSection('channels')} className="w-full flex items-center justify-between p-2 text-zinc-300 hover:text-white font-medium">
@@ -700,7 +787,16 @@ function App() {
                                   <div className="p-3">
                                       <h3 className="font-semibold text-white text-sm line-clamp-2 mb-1">{item.name}</h3>
                                       <div className="flex items-center justify-between">
-                                        <span className="text-xs text-zinc-500 uppercase">{item.platform}</span>
+                                        <div className="flex gap-2">
+                                            <span className="text-xs text-zinc-500 uppercase">{item.platform}</span>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handleLaunchLearn(mediaItemToVideoItem(item)); }}
+                                                className="text-zinc-500 hover:text-yellow-400 transition-colors"
+                                                title="Learn Mode"
+                                            >
+                                                <Brain size={14} />
+                                            </button>
+                                        </div>
                                         <button 
                                             onClick={(e) => handleDelete(e, 'watch_later', item.id!)}
                                             className="text-zinc-500 hover:text-red-400 text-xs"
@@ -737,7 +833,12 @@ function App() {
               </div>
 
               {/* Random Discovery Component */}
-              <RandomDiscovery channels={channels} onVideoClick={setOverlayVideo} onBookmark={handleAddToWatchLater} />
+              <RandomDiscovery 
+                channels={channels} 
+                onVideoClick={setOverlayVideo} 
+                onBookmark={handleAddToWatchLater} 
+                onLearn={handleLaunchLearn}
+              />
 
               <div>
                   <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
@@ -808,8 +909,7 @@ function App() {
                 </div>
              </div>
           )}
-          
-          {/* ... Tag View ... */}
+
           {activeView.type === 'tag' && (
              <div className="p-8 max-w-6xl mx-auto overflow-y-auto h-full pb-20">
                 <div className="flex items-center gap-3 mb-6">
@@ -861,7 +961,11 @@ function App() {
           )}
 
           {(activeView.type === 'channel' || activeView.type === 'playlist' || activeView.type === 'video') && (
-            <FeedViewer item={(activeView as any).item} onBookmark={handleAddToWatchLater} />
+            <FeedViewer 
+                item={(activeView as any).item} 
+                onBookmark={handleAddToWatchLater} 
+                onLearn={handleLaunchLearn}
+            />
           )}
 
           {activeView.type === 'settings' && sessionKey && <SettingsPanel sessionKey={sessionKey} />}
@@ -901,6 +1005,12 @@ function App() {
                 <div className="p-4 border-b border-zinc-700 flex items-center justify-between bg-zinc-900">
                     <h3 className="font-semibold text-white truncate pr-4">{overlayVideo.title}</h3>
                     <div className="flex items-center gap-3">
+                         <button
+                            onClick={(e) => { setOverlayVideo(null); handleLaunchLearn(overlayVideo); }}
+                            className="flex items-center gap-2 px-3 py-1 bg-yellow-900/20 text-yellow-500 rounded text-sm hover:bg-yellow-900/40"
+                        >
+                            <Brain size={16} /> Learn
+                        </button>
                         <button 
                             onClick={(e) => handleAddToWatchLater(overlayVideo)}
                             className="text-zinc-400 hover:text-white"

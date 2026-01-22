@@ -27,6 +27,7 @@ export interface AppSettings {
   apiKey?: EncryptedData; // YouTube API Key
   vimeoToken?: EncryptedData; // Vimeo Access Token
   dailymotionToken?: EncryptedData; // Dailymotion Bearer Token
+  geminiApiKey?: EncryptedData; // Google Gemini API Key
 
   // Nomad Infrastructure
   nomadProxyKey?: EncryptedData; // Nomad Cloudflare Worker Key
@@ -72,11 +73,26 @@ export interface VideoItem {
   views?: string; // Optional if we fetch stats later
 }
 
+export interface Lesson {
+    id?: number;
+    title: string;
+    description?: string; // Short description/metadata
+    category: string;
+    excerpt: string;
+    content: string; // Markdown or JSON content from AI
+    videoId: string;
+    videoUrl: string;
+    tags?: string[];
+    createdAt: number;
+}
+
 export type ViewState = 
   | { type: 'dashboard' } 
   | { type: 'channel', item: MediaItem, section?: string } 
   | { type: 'playlist', item: MediaItem, section?: string } 
   | { type: 'video', item: MediaItem, section?: string }
+  | { type: 'learn', video: VideoItem, initialLesson?: Lesson }
+  | { type: 'lessons' }
   | { type: 'about' }
   | { type: 'settings' }
   | { type: 'search', query: string }

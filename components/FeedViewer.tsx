@@ -1,15 +1,16 @@
 
 import React, { useEffect, useState } from 'react';
-import { ExternalLink, Play, Clock, User, X, Bookmark, Check, RotateCcw } from 'lucide-react';
+import { ExternalLink, Play, Clock, User, X, Bookmark, Check, RotateCcw, Brain } from 'lucide-react';
 import { MediaItem, VideoItem } from '../types';
 import { mediaResolver } from '../services/mediaResolver';
 
 interface FeedViewerProps {
   item: MediaItem;
   onBookmark?: (video: VideoItem) => void;
+  onLearn?: (video: VideoItem) => void;
 }
 
-export const FeedViewer: React.FC<FeedViewerProps> = ({ item, onBookmark }) => {
+export const FeedViewer: React.FC<FeedViewerProps> = ({ item, onBookmark, onLearn }) => {
   const [items, setItems] = useState<VideoItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,15 +52,24 @@ export const FeedViewer: React.FC<FeedViewerProps> = ({ item, onBookmark }) => {
       }
   };
 
+  const handleLearn = (e: React.MouseEvent, vid: VideoItem) => {
+    e.stopPropagation();
+    if (onLearn) {
+        onLearn(vid);
+    }
+  };
+
   // 1. Single Video View (Reference/Favorite)
   if (item.type === 'video') {
-      const displayItem = items[0] || {
+      const displayItem: VideoItem = items[0] || {
           id: item.sourceId,
           title: item.name,
           description: '',
-          tags: item.tags,
           platform: item.platform || 'youtube',
-          link: item.url
+          link: item.url,
+          pubDate: new Date(item.createdAt).toISOString(),
+          thumbnail: '',
+          author: item.platform || 'Unknown'
       };
 
     return (
@@ -90,15 +100,25 @@ export const FeedViewer: React.FC<FeedViewerProps> = ({ item, onBookmark }) => {
                 ))}
             </div>
             
-            <a 
-                href={displayItem.link || item.url}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-2 text-sm text-zinc-400 hover:text-white transition-colors"
-            >
-                <ExternalLink size={14} />
-                Open on {displayItem.platform}
-            </a>
+            <div className="flex items-center gap-4">
+                {onLearn && (
+                    <button 
+                        onClick={(e) => handleLearn(e, displayItem)}
+                        className="flex items-center gap-2 px-3 py-2 bg-yellow-900/30 text-yellow-500 rounded border border-yellow-900/50 hover:bg-yellow-900/50 transition-colors text-sm"
+                    >
+                        <Brain size={16} /> Learn Mode
+                    </button>
+                )}
+                <a 
+                    href={displayItem.link || item.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-2 text-sm text-zinc-400 hover:text-white transition-colors"
+                >
+                    <ExternalLink size={14} />
+                    Open on {displayItem.platform}
+                </a>
+            </div>
         </div>
         {items[0]?.description && (
             <div className="mt-8 p-4 bg-surface rounded-lg border border-zinc-700">
@@ -207,6 +227,15 @@ export const FeedViewer: React.FC<FeedViewerProps> = ({ item, onBookmark }) => {
                             <span>{new Date(vid.pubDate).toLocaleDateString()}</span>
                         </div>
                         <div className="flex items-center gap-3">
+                            {onLearn && (
+                                <button
+                                    onClick={(e) => handleLearn(e, vid)}
+                                    className="text-zinc-500 hover:text-yellow-400 transition-colors"
+                                    title="Learn Mode"
+                                >
+                                    <Brain size={16} />
+                                </button>
+                            )}
                             {onBookmark && (
                                 <button 
                                     onClick={(e) => handleBookmark(e, vid)}
@@ -247,12 +276,22 @@ export const FeedViewer: React.FC<FeedViewerProps> = ({ item, onBookmark }) => {
             <div className="w-full max-w-5xl bg-surface rounded-2xl overflow-hidden shadow-2xl border border-zinc-700 flex flex-col" onClick={e => e.stopPropagation()}>
                 <div className="p-4 border-b border-zinc-700 flex items-center justify-between bg-zinc-900">
                     <h3 className="font-semibold text-white truncate pr-4">{activeVideo.title}</h3>
-                    <button 
-                        onClick={() => setActiveVideo(null)}
-                        className="p-1 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-full transition-colors"
-                    >
-                        <X size={24} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        {onLearn && (
+                            <button
+                                onClick={() => { setActiveVideo(null); if(onLearn) onLearn(activeVideo); }}
+                                className="flex items-center gap-2 px-3 py-1 bg-yellow-900/20 text-yellow-500 rounded text-sm hover:bg-yellow-900/40"
+                            >
+                                <Brain size={16} /> Learn
+                            </button>
+                        )}
+                        <button 
+                            onClick={() => setActiveVideo(null)}
+                            className="p-1 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-full transition-colors"
+                        >
+                            <X size={24} />
+                        </button>
+                    </div>
                 </div>
                 <div className="aspect-video bg-black w-full">
                     <iframe

@@ -8,14 +8,15 @@
   <br/>
   <br/>
   <h1>🎥 Nomad Media Player</h1>
-  <br/>
+  <br/><a href="https://ai-studio-apps.github.io/nomad-media-player/" title="Open Nomad Media Player">
   <img width="auto" height="auto" alt="nomad media player" src="nomad-media-player-screenshot.jpg" />
+  </a>
   <br/>
   <br/>
 </div>
 
 
-Nomad Media Player stores your favorite public channels, playlists, and videos locally.
+Nomad Media Player stores your favorite public video channels, playlists, and learning guides locally.
 A self-hosted app for digital nomads, built with local-first design and privacy-respecting architecture.   
 
 In an era of abundant information, Nomad Media Player is a purpose-built workspace for intentional viewing and research. It allows students and professionals to curate their own educational feeds, separating valuable learning resources from the algorithmic loops of entertainment platforms.
@@ -23,7 +24,20 @@ In an era of abundant information, Nomad Media Player is a purpose-built workspa
 It fosters a proactive approach to media consumption, ensuring your time is spent on content you selected, not content suggested to you.
 
 
-https://ai-studio-apps.github.io/nomad-media-player/
+
+
+
+## Features 
+
+
+| Feature                     | Description                                                                                                                                   |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Organize Your Content       | Easily manage your favorite video channels and create playlists. Save videos to your "Favorites" or "Watch Later" lists for convenient access. |
+| AI-Powered Learning Guides  | Transform any video into a learning experience! Click the "brain" icon to generate a summary and engage in a chat to deepen your understanding of the content. |
+| Seamless Platform Integration | Connect to popular video platforms using your API keys for a richer experience.                                                              |
+| Custom & Free Proxy | Bypass restrictions with your own proxy server or automatically fallback to free proxies to overcome network restrictions and maintain privacy.                      |
+| AI Gemini Integration       | Utilize your AI Gemini Free Tier API key to get learning guide with chat (Local LLM coming soon!).                                             |
+
 
 
 ## API and RSS

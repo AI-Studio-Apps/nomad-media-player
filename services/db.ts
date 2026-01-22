@@ -1,8 +1,8 @@
 
-import { UserAuth, MediaItem, DEFAULT_CHANNELS, DEFAULT_PLAYLISTS, DEFAULT_TAGS, AppSettings, Tag } from '../types';
+import { UserAuth, MediaItem, DEFAULT_CHANNELS, DEFAULT_PLAYLISTS, DEFAULT_TAGS, AppSettings, Tag, Lesson } from '../types';
 
 const DB_NAME = 'NomadMediaSecureDB';
-const DB_VERSION = 5; // Bump version for watchLater store
+const DB_VERSION = 6; // Bump version for lessons store
 
 export class DBService {
   private db: IDBDatabase | null = null;
@@ -50,6 +50,12 @@ export class DBService {
             db.createObjectStore('watchLater', { keyPath: 'id', autoIncrement: true });
         }
 
+        // Lessons
+        if (!db.objectStoreNames.contains('lessons')) {
+            const lessonStore = db.createObjectStore('lessons', { keyPath: 'id', autoIncrement: true });
+            lessonStore.createIndex('videoId', 'videoId', { unique: false });
+        }
+
         // Tags
         let tagStore: IDBObjectStore;
         if (!db.objectStoreNames.contains('tags')) {
@@ -65,10 +71,6 @@ export class DBService {
         }
 
         // --- MIGRATION / SEEDING LOGIC (Runs on Version Upgrade) ---
-        // Only run seeding if upgrading from scratch (version 1) or specific major version logic
-        // For existing users, we don't want to wipe data on minor updates unless intended.
-        // However, the original code wiped data on V4. We will keep logic safe here.
-        
         if (event.oldVersion < 4) {
             // 1. Clear and Reseed Channels
             channelStore.clear(); 
@@ -145,7 +147,7 @@ export class DBService {
 
   async exportFullDB(): Promise<Record<string, any[]>> {
     if (!this.db) throw new Error('DB not initialized');
-    const storeNames = ['auth', 'channels', 'playlists', 'favorites', 'watchLater', 'tags', 'settings'];
+    const storeNames = ['auth', 'channels', 'playlists', 'favorites', 'watchLater', 'lessons', 'tags', 'settings'];
     const exportData: Record<string, any[]> = {};
 
     for (const name of storeNames) {
@@ -160,7 +162,7 @@ export class DBService {
       return new Promise((resolve, reject) => {
           if (!this.db) return reject('DB not initialized');
           
-          const storeNames = ['auth', 'channels', 'playlists', 'favorites', 'watchLater', 'tags', 'settings'];
+          const storeNames = ['auth', 'channels', 'playlists', 'favorites', 'watchLater', 'lessons', 'tags', 'settings'];
           const validStores = storeNames.filter(name => this.db!.objectStoreNames.contains(name));
 
           // Open a transaction for all stores
