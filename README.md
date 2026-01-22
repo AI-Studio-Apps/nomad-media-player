@@ -38,7 +38,7 @@ It fosters a proactive approach to media consumption, ensuring your time is spen
 
 ## Settings
 
-### API and RSS
+### 🔑 API and RSS
 
 Many video platforms have restricted or removed public RSS feeds to enforce tracking, control embedding, and monetize access. As a result, their content can no longer be fetched directly by browser-based apps due to CORS restrictions.
 
@@ -53,7 +53,7 @@ This ensures reliable access to public media while staying true to our local-fir
 These APIs typically require a free developer account to generate an API key, but no payment or sensitive permissions are needed. Your key stays in your browser and encrypted by the app.
 
 
-### YouTube API key
+### 🎞 YouTube API key
 
 To fetch your public YouTube videos or channel info, you’ll need a free **YouTube Data API key** from Google.
 
@@ -75,9 +75,10 @@ and requires no "hacky" CORS proxies.
 - Paste your API key and click **Save**
 - Your key is stored **only in your browser** (via IndexedDB).
 
-> ℹ️ This key only accesses **public data** (e.g., video titles, thumbnails). It cannot modify your channel or access private content.
+> [!NOTE]
+> This key only accesses **public data** (e.g., video titles, thumbnails). It cannot modify your channel or access private content.
 
-## Security
+## 🔐 Security
 
 **Web Crypto API (window.crypto)** Modern browsers have built-in JavaScript APIs that allow web developers to perform cryptographic operations (encryption, decryption, signing) directly in the browser, enabling client-side encryption.
 
@@ -90,7 +91,11 @@ Using the Web Crypto API (window.crypto) ensures that sensitive data (like the A
 2. Session Key: When the user logs in, it derives a CryptoKey from the password + the stored salt. This key exists only in memory (RAM) while the page is open.
 3. Encrypted API Key: The YouTube API Key is encrypted with this Session Key before being stored. Even if someone steals the database file, they cannot use the API Key without the user's password.
 
-## Development
+> [!CAUTION]
+> Client-Side Encryption Enabled: Your password and API keys are encrypted in your browser using AES-GCM and PBKDF2. We cannot recover your password if you lose it.
+
+
+## 🛠 Development
 
 ### Run Locally
 
@@ -103,8 +108,6 @@ Using the Web Crypto API (window.crypto) ensures that sensitive data (like the A
 3. Create an account
 4. Set the YouTube `API_KEY` in **Settings**
 
-> [!CAUTION]
-> Client-Side Encryption Enabled: Your password and API keys are encrypted in your browser using AES-GCM and PBKDF2. We cannot recover your password if you lose it.
 
 
 
